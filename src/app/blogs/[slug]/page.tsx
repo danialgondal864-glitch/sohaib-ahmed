@@ -1,0 +1,3 @@
+import { notFound } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+export default async function BlogPost({params}:{params:Promise<{slug:string}>}){const {slug}=await params;const s=await createClient();const {data}=await s.from("posts").select("*").eq("slug",slug).eq("published",true).single();if(!data)notFound();return <article className="article-page container"><p className="eyebrow">{data.category||"RESEARCH"} · {data.read_time||5} MIN READ</p><h1>{data.title}</h1><p className="article-excerpt">{data.excerpt}</p><div className="article-content">{data.content}</div><p className="fine-print">Research content should cite and link to its original sources.</p></article>}
