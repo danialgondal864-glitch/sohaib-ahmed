@@ -17,11 +17,13 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 2 — Password recovery and email authentication:** signup confirmation callbacks, password-reset email requests, and password updates are implemented. The Supabase email round-trip still requires project configuration and live verification.
 - **Phase 3 — Contact submissions:** server-side validation, a database-backed limit of 3 messages per IP per rolling hour, HMAC-only IP fingerprints, and admin-only message reads are implemented. Apply the migration and configure the private service-role key before live submission testing.
 - **Phase 4 — Research and bookmarks:** article search/category filters, separate research sections and source links, and per-user bookmarks with RLS are implemented. Apply the research/bookmarks migration before using bookmarks.
-- **Next phases:** admin CRUD for content and site data; production validation.
+- **Phase 5 — Editorial administration:** server-authorized post create, update, publish/unpublish, and delete actions plus an admin-only contact inbox are implemented. Admin routes require the existing RLS migrations.
+- **Next phases:** project and user administration; media and website settings; production validation.
 
 ### Architecture decisions
 
 - Administrator status is stored in `public.profiles.role` and checked by the server before rendering `/admin`.
+- Every editorial server action repeats the administrator check; post and contact-message access is also constrained by RLS.
 - Client users can read their own profile and update only `full_name`; role changes require a trusted database operator.
 - Post mutation is restricted by row-level security to administrator profiles. Public visitors can read published posts only.
 - Supabase SSR and browser clients use the public anon key. Only the contact API uses `SUPABASE_SERVICE_ROLE_KEY`, on the server, to call the restricted contact RPC; it is never sent to the browser.
@@ -53,7 +55,7 @@ Open http://localhost:3000.
 
 ## Blog publishing
 The blog reads from `public.posts` and displays only rows where `published = true`. Search and category filters operate over the loaded published articles.
-Post creation and mutation are restricted by row-level security to administrators. Until the admin editor is implemented, use a trusted Supabase SQL Editor session. Set:
+Post creation and mutation are restricted by row-level security to administrators. Use the `/admin` editor for article CRUD. Set:
 - `title`
 - unique URL-safe `slug`
 - `category`

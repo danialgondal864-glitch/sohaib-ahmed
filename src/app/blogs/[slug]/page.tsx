@@ -160,7 +160,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
         </section>
       )}
       {invalidSources > 0 && (
-        <p className="error" role="note">Some source entries could not be displayed. Review their titles and HTTP(S) links.</p>
+        <p className="error" role="note">Some source entries or metadata could not be displayed. Review their titles, dates, and HTTP(S) links.</p>
       )}
       {(verifiedFacts.length > 0 || findings.length > 0) && sources.length === 0 && (
         <p className="error" role="note">This article has factual research sections but no source links are attached yet.</p>
