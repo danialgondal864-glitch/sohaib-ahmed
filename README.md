@@ -46,7 +46,7 @@ Open http://localhost:3000.
 
 ## Supabase setup
 1. Create a Supabase project.
-2. For a new project, open SQL Editor and run `supabase/schema.sql`. To upgrade an existing project, run `supabase/migrations/20261117_profiles_and_admin_roles.sql`, `supabase/migrations/20261118_contact_messages_with_rate_limit.sql`, and `supabase/migrations/20261118_research_and_bookmarks.sql` in that order.
+2. Run `supabase/migrations/20261116_initial_platform.sql` for a new project, followed by `20261117_profiles_and_admin_roles.sql`, `20261118_contact_messages_with_rate_limit.sql`, and `20261119_research_and_bookmarks.sql`. The live project has been applied through this migration sequence.
 3. Copy Project URL and anon/public key from Project Settings → API, and set `SUPABASE_SERVICE_ROLE_KEY` from the same project for server-side contact submissions.
 4. Add the values to `.env.local`. Keep the service-role key private; never prefix it with `NEXT_PUBLIC_` or expose it in browser code.
 5. In Authentication → URL Configuration, set your local Site URL to `http://localhost:3000`.
