@@ -9,6 +9,10 @@ export async function GET(request: NextRequest) {
       : "/dashboard";
 
   if (code) {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      return NextResponse.redirect(new URL("/login?error=auth-callback", request.url));
+    }
+
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 

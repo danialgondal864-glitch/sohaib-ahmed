@@ -5,6 +5,10 @@ import ArticleCard from "@/components/ArticleCard";
 import type { PostCardData } from "@/lib/posts";
 
 export default async function Dashboard() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    redirect("/login");
+  }
+
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
 
