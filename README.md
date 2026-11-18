@@ -14,7 +14,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 ## Development progress
 
 - **Phase 1 — Authentication and authorization foundation:** server-verified dashboard sessions, server-side administrator role checks, profile provisioning on signup, and admin-only post management policies. The migration is prepared but has not been applied to any Supabase project.
-- **Next phases:** password recovery and email-auth flows; contact submission; research publishing and bookmarks; admin CRUD for content and site data; deployment and production validation.
+- **Phase 2 — Password recovery and email authentication:** signup confirmation callbacks, password-reset email requests, and password updates are implemented. The Supabase email round-trip still requires project configuration and live verification.
+- **Next phases:** contact submission; research publishing and bookmarks; admin CRUD for content and site data; production validation.
 
 ### Architecture decisions
 
@@ -45,8 +46,8 @@ Open http://localhost:3000.
 3. Copy Project URL and anon/public key from Project Settings → API.
 4. Add them to `.env.local`.
 5. In Authentication → URL Configuration, set your local Site URL to `http://localhost:3000`.
-6. Add your deployed Vercel URL to the allowed redirect URLs.
-7. Configure email confirmation according to your preference.
+6. Add `http://localhost:3000/auth/callback` and `https://sohaib-ahmed-five.vercel.app/auth/callback` to the allowed redirect URLs. Add the matching callback URL for any custom domain or Vercel preview environment you use.
+7. Configure email confirmation and the Supabase confirmation/reset email templates. The confirmation link must return to the `emailRedirectTo` URL supplied by the app.
 
 ## Blog publishing
 The blog reads from `public.posts` and displays only rows where `published = true`.
