@@ -56,6 +56,12 @@ create table if not exists public.posts (
   category text not null default 'Research',
   excerpt text not null default '',
   content text not null default '',
+  verified_facts text[] not null default '{}',
+  research_findings text[] not null default '{}',
+  opinions text[] not null default '{}',
+  proposed_solutions text[] not null default '{}',
+  sources jsonb not null default '[]'::jsonb
+    constraint posts_sources_array_check check (jsonb_typeof(sources) = 'array'),
   read_time integer not null default 5,
   published boolean not null default false,
   author_id uuid references auth.users(id) on delete set null,
@@ -115,6 +121,43 @@ using (
     where profiles.id = auth.uid() and profiles.role = 'admin'
   )
 );
+
+create table if not exists public.bookmarks (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  post_id uuid not null references public.posts(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, post_id)
+);
+create index if not exists bookmarks_user_created_at_idx
+  on public.bookmarks (user_id, created_at desc);
+create index if not exists bookmarks_post_id_idx
+  on public.bookmarks (post_id);
+alter table public.bookmarks enable row level security;
+revoke all on table public.bookmarks from anon, authenticated;
+grant select, insert, delete on table public.bookmarks to authenticated;
+
+drop policy if exists "Users can view their own bookmarks" on public.bookmarks;
+create policy "Users can view their own bookmarks"
+on public.bookmarks for select to authenticated
+using (user_id = auth.uid());
+
+drop policy if exists "Users can bookmark published posts" on public.bookmarks;
+create policy "Users can bookmark published posts"
+on public.bookmarks for insert to authenticated
+with check (
+  user_id = auth.uid()
+  and exists (
+    select 1
+    from public.posts
+    where posts.id = bookmarks.post_id
+      and posts.published = true
+  )
+);
+
+drop policy if exists "Users can remove their own bookmarks" on public.bookmarks;
+create policy "Users can remove their own bookmarks"
+on public.bookmarks for delete to authenticated
+using (user_id = auth.uid());
 
 -- Contact messages are inserted only through the rate-limited server RPC.
 create table if not exists public.contact_messages (

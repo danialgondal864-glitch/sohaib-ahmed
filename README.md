@@ -16,7 +16,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 1 — Authentication and authorization foundation:** server-verified dashboard sessions, server-side administrator role checks, profile provisioning on signup, and admin-only post management policies. The migration is prepared but has not been applied to any Supabase project.
 - **Phase 2 — Password recovery and email authentication:** signup confirmation callbacks, password-reset email requests, and password updates are implemented. The Supabase email round-trip still requires project configuration and live verification.
 - **Phase 3 — Contact submissions:** server-side validation, a database-backed limit of 3 messages per IP per rolling hour, HMAC-only IP fingerprints, and admin-only message reads are implemented. Apply the migration and configure the private service-role key before live submission testing.
-- **Next phases:** research publishing and bookmarks; admin CRUD for content and site data; production validation.
+- **Phase 4 — Research and bookmarks:** article search/category filters, separate research sections and source links, and per-user bookmarks with RLS are implemented. Apply the research/bookmarks migration before using bookmarks.
+- **Next phases:** admin CRUD for content and site data; production validation.
 
 ### Architecture decisions
 
@@ -43,7 +44,7 @@ Open http://localhost:3000.
 
 ## Supabase setup
 1. Create a Supabase project.
-2. For a new project, open SQL Editor and run `supabase/schema.sql`. To upgrade a project that already ran the original schema, run `supabase/migrations/20261117_profiles_and_admin_roles.sql`, then `supabase/migrations/20261118_contact_messages_with_rate_limit.sql`.
+2. For a new project, open SQL Editor and run `supabase/schema.sql`. To upgrade an existing project, run `supabase/migrations/20261117_profiles_and_admin_roles.sql`, `supabase/migrations/20261118_contact_messages_with_rate_limit.sql`, and `supabase/migrations/20261118_research_and_bookmarks.sql` in that order.
 3. Copy Project URL and anon/public key from Project Settings → API, and set `SUPABASE_SERVICE_ROLE_KEY` from the same project for server-side contact submissions.
 4. Add the values to `.env.local`. Keep the service-role key private; never prefix it with `NEXT_PUBLIC_` or expose it in browser code.
 5. In Authentication → URL Configuration, set your local Site URL to `http://localhost:3000`.
@@ -51,17 +52,20 @@ Open http://localhost:3000.
 7. Configure email confirmation and the Supabase confirmation/reset email templates. The confirmation link must return to the `emailRedirectTo` URL supplied by the app.
 
 ## Blog publishing
-The blog reads from `public.posts` and displays only rows where `published = true`.
+The blog reads from `public.posts` and displays only rows where `published = true`. Search and category filters operate over the loaded published articles.
 Post creation and mutation are restricted by row-level security to administrators. Until the admin editor is implemented, use a trusted Supabase SQL Editor session. Set:
 - `title`
 - unique URL-safe `slug`
 - `category`
 - `excerpt`
-- `content` (plain text for now)
+- `content` (article body)
+- `verified_facts`, `research_findings`, `opinions`, and `proposed_solutions` (text arrays; keep each claim in the appropriate section)
+- `sources` (JSON array of objects with `title`, `url`, and optional `published_at`)
 - `read_time`
 - `published = true`
 - `author_id` = the authenticated author's user UUID
 
+Only publish factual research claims when their source links can be verified. Bookmark rows are private to the owning user; users can bookmark published posts only.
 Do not grant end users direct post-management access or expose a Supabase service-role key in browser code.
 
 ## Deploy to Vercel
