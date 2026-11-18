@@ -12,6 +12,9 @@ export default async function Dashboard() {
   const supabase = await createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
 
+  if (error?.message === "Auth session missing!") {
+    redirect("/login");
+  }
   if (error) {
     throw new Error(`Unable to verify your account: ${error.message}`);
   }

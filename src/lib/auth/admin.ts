@@ -9,6 +9,9 @@ export async function requireAdmin() {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
+  if (authError?.message === "Auth session missing!") {
+    redirect("/login");
+  }
   if (authError) {
     throw new Error(`Unable to verify your account: ${authError.message}`);
   }
