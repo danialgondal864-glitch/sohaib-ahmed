@@ -24,6 +24,16 @@ export default function ProjectForm({ action, project }: ProjectFormProps) {
         />
       </label>
       <label>
+        Live project URL (optional)
+        <input
+          name="project_url"
+          type="url"
+          defaultValue={project?.project_url ?? ""}
+          maxLength={2048}
+          placeholder="https://example.com"
+        />
+      </label>
+      <label>
         Summary
         <textarea name="summary" defaultValue={project?.summary} maxLength={400} rows={2} required />
       </label>

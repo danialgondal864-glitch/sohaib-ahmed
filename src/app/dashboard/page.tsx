@@ -22,6 +22,16 @@ export default async function Dashboard() {
     redirect("/login");
   }
 
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (profileError) {
+    throw new Error(`Unable to verify your account role: ${profileError.message}`);
+  }
+  const isAdmin = profile?.role === "admin";
+
   async function logout() {
     "use server";
 
@@ -77,6 +87,9 @@ export default async function Dashboard() {
         <p className="eyebrow">YOUR ACCOUNT</p>
         <h1>Welcome, <span className="gradient-text">{displayName}.</span></h1>
         <p>{user.email}</p>
+        {isAdmin && (
+          <Link className="button" href="/admin">Open admin dashboard</Link>
+        )}
       </div>
       <section className="section-inner" id="saved-articles">
         <div className="section-heading">

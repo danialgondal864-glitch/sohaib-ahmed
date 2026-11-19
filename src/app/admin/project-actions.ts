@@ -15,11 +15,37 @@ function getText(formData: FormData, key: string, maxLength: number): string | n
   return trimmed.length > 0 && trimmed.length <= maxLength ? trimmed : null;
 }
 
+function getOptionalWebUrl(formData: FormData, key: string): string | null | undefined {
+  const value = formData.get(key);
+  if (typeof value !== "string" || value.trim().length > 2048) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      !url.hostname ||
+      url.username ||
+      url.password
+    ) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function parseProject(formData: FormData): ProjectContent | null {
   const title = getText(formData, "title", 160);
   const slug = getText(formData, "slug", 160);
   const summary = getText(formData, "summary", 400);
   const description = getText(formData, "description", 8000);
+  const projectUrl = getOptionalWebUrl(formData, "project_url");
   const stackValue = formData.get("stack");
   const sortOrderValue = getText(formData, "sort_order", 5);
   const sortOrder = sortOrderValue ? Number(sortOrderValue) : NaN;
@@ -33,6 +59,7 @@ function parseProject(formData: FormData): ProjectContent | null {
     !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ||
     !summary ||
     !description ||
+    projectUrl === undefined ||
     !stack ||
     stack.length > 20 ||
     stack.some((item) => item.length > 80) ||
@@ -46,6 +73,7 @@ function parseProject(formData: FormData): ProjectContent | null {
   return {
     title,
     slug,
+    project_url: projectUrl,
     summary,
     description,
     stack,

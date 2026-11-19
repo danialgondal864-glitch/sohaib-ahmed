@@ -1,5 +1,5 @@
 import "./projects.css";
-import { Cloud, Network, Server, Terminal } from "lucide-react";
+import { ArrowUpRight, Cloud, Network, Server, Terminal } from "lucide-react";
 import { profile } from "@/lib/data";
 import { isProjectContent, type ProjectContent } from "@/lib/projects";
 import { createClient } from "@/lib/supabase/server";
@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 const cvProject: ProjectContent = {
   title: profile.project.title,
   slug: "bus-tracking-system-cloud-deployment",
+  project_url: null,
   summary: profile.project.description,
   description: profile.project.description,
   stack: profile.project.stack,
@@ -19,7 +20,7 @@ async function getProjects(): Promise<{ projects: ProjectContent[]; usingCvProje
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("projects")
-    .select("title, slug, summary, description, stack, featured, published, sort_order")
+    .select("title, slug, project_url, summary, description, stack, featured, published, sort_order")
     .eq("published", true)
     .order("featured", { ascending: false })
     .order("sort_order", { ascending: true })
@@ -41,6 +42,9 @@ async function getProjects(): Promise<{ projects: ProjectContent[]; usingCvProje
 
 export default async function Projects() {
   const { projects, usingCvProject } = await getProjects();
+  const includesBusTracking = projects.some((project) =>
+    project.slug === "bus-tracking-system-cloud-deployment"
+  );
 
   return (
     <div className="page-shell container">
@@ -67,7 +71,7 @@ export default async function Projects() {
             <div>
               <p className="eyebrow">
                 {project.featured ? "FEATURED PROJECT" : "PROJECT"}
-                {usingCvProject ? " · CLOUD INFRASTRUCTURE" : ""}
+                {project.slug === "bus-tracking-system-cloud-deployment" ? " · CLOUD INFRASTRUCTURE" : ""}
               </p>
               <h2>{project.title}</h2>
               <p>{project.summary}</p>
@@ -75,28 +79,38 @@ export default async function Projects() {
               <div className="tag-row">
                 {project.stack.map((technology) => <span key={technology}>{technology}</span>)}
               </div>
+              {project.project_url && (
+                <a
+                  className="button button-ghost"
+                  href={project.project_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Visit project <ArrowUpRight size={16} />
+                </a>
+              )}
             </div>
           </article>
         ))}
       </div>
 
+      {includesBusTracking && (
+        <section className="section-inner">
+          <p className="eyebrow">IMPLEMENTATION AREAS</p>
+          <h2>What the work involved</h2>
+          <div className="skill-grid">
+            <div className="skill-card"><Cloud /><h3>Cloud deployment</h3><p>Oracle Cloud Linux virtual machine environment.</p></div>
+            <div className="skill-card"><Terminal /><h3>Remote administration</h3><p>SSH-based server administration and configuration.</p></div>
+            <div className="skill-card"><Network /><h3>Application connectivity</h3><p>API and database connectivity checks.</p></div>
+            <div className="skill-card"><Server /><h3>Operations</h3><p>Service management and troubleshooting deployment issues.</p></div>
+          </div>
+        </section>
+      )}
       {usingCvProject && (
-        <>
-          <section className="section-inner">
-            <p className="eyebrow">IMPLEMENTATION AREAS</p>
-            <h2>What the work involved</h2>
-            <div className="skill-grid">
-              <div className="skill-card"><Cloud /><h3>Cloud deployment</h3><p>Oracle Cloud Linux virtual machine environment.</p></div>
-              <div className="skill-card"><Terminal /><h3>Remote administration</h3><p>SSH-based server administration and configuration.</p></div>
-              <div className="skill-card"><Network /><h3>Application connectivity</h3><p>API and database connectivity checks.</p></div>
-              <div className="skill-card"><Server /><h3>Operations</h3><p>Service management and troubleshooting deployment issues.</p></div>
-            </div>
-          </section>
-          <p className="fine-print">
-            This portfolio currently features the project documented in the CV. More projects can be added when
-            their details and evidence are available.
-          </p>
-        </>
+        <p className="fine-print">
+          This portfolio currently features the project documented in the CV. More projects can be added when
+          their details and evidence are available.
+        </p>
       )}
     </div>
   );

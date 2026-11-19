@@ -22,7 +22,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 7 — User administration:** an admin-only paginated user list and protected role updates are implemented. Migrations `20261123_admin_user_management_grants.sql` and `20261124_admin_role_updates_atomic.sql` are applied. Self-role changes and concurrent demotions of the last administrator are blocked.
 - **Phase 8 — Media library:** public website images and private administrator-only media use separate Supabase Storage buckets with admin-only object operations, 5 MB image limits, and MIME restrictions. Migration `20261125_media_storage_buckets.sql` is applied.
 - **Phase 9 — Website settings:** administrators can update site metadata, public contact details, social links, and an optional homepage announcement. Migration `20261126_website_settings.sql` is applied.
-- **Next phases:** authenticated production validation and security review.
+- **Phase 10 — CV refresh:** added the SparkSolution internship, updated skills and career objective, added the CV-listed projects and public links, and refreshed LinkedIn/GitHub/X links. Migration `20261127_cv_projects_and_links.sql` is applied.
+- **Remaining:** verify administrator actions (role changes, media upload/delete, and settings save) in an authenticated production session; complete a final launch checklist.
 
 ### Architecture decisions
 
@@ -33,6 +34,7 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - Administrator user management uses a server-only Supabase secret key after the current session is independently verified as an administrator. The user list is paginated, role inputs are validated, self-demotion is blocked, and an atomic database function serializes demotions to protect the last administrator.
 - Storage object access is controlled by Supabase policies tied to the signed-in administrator profile. Public image URLs are intentionally public; private media access is limited to admins and uses one-minute signed links.
 - Website settings are publicly readable because they contain only intentionally public presentation and contact details; only administrators can update them.
+- Public project links accept only HTTP/HTTPS URLs; CV project seeds use conflict-safe inserts so existing administrator-managed project rows are not overwritten.
 - Supabase SSR and browser clients use the public anon key. The server-only `SUPABASE_SERVICE_ROLE_KEY` is used by the contact API for its restricted RPC and by administrator-only user management after role verification; it is never sent to the browser.
 
 ## Requirements
