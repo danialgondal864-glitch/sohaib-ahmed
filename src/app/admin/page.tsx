@@ -1,7 +1,10 @@
 import { createPost, deletePost, updatePost } from "@/app/admin/actions";
+import { createProject, deleteProject, updateProject } from "@/app/admin/project-actions";
 import PostForm from "@/app/admin/PostForm";
+import ProjectForm from "@/app/admin/ProjectForm";
 import { requireAdmin } from "@/lib/auth/admin";
 import { RESEARCH_CATEGORIES } from "@/lib/posts";
+import { isProjectRecord } from "@/lib/projects";
 
 type AdminPageProps = {
   searchParams: Promise<{ status?: string }>;
@@ -13,6 +16,11 @@ const statusMessages: Record<string, string> = {
   deleted: "Article deleted.",
   invalid: "Check the article fields and source JSON, then try again.",
   "save-failed": "The article could not be saved. Check that the slug is unique and the research migration is applied.",
+  "project-created": "Project created.",
+  "project-updated": "Project updated.",
+  "project-deleted": "Project deleted.",
+  "project-invalid": "Check the project fields and try again.",
+  "project-save-failed": "The project could not be saved. Check that the slug is unique and the projects migration is applied.",
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
@@ -24,6 +32,29 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   if (postsError) {
     throw new Error(`Unable to load research articles: ${postsError.message}`);
+  }
+
+  const { data: projects, error: projectsError } = await supabase
+    .from("projects")
+    .select("*")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false });
+  const projectSetupMissing =
+    projectsError?.code === "PGRST205" ||
+    projectsError?.code === "42P01";
+
+  if (projectsError && !projectSetupMissing) {
+    throw new Error(`Unable to load portfolio projects: ${projectsError.message}`);
+  }
+  const projectRows: unknown = projects ?? [];
+  const projectRecords = Array.isArray(projectRows)
+    ? projectRows.filter(isProjectRecord)
+    : null;
+  if (
+    !projectSetupMissing &&
+    (!Array.isArray(projectRows) || !projectRecords || projectRecords.length !== projectRows.length)
+  ) {
+    throw new Error("The portfolio projects table returned invalid data.");
   }
 
   const { data: messages, error: messagesError } = await supabase
@@ -87,6 +118,51 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           )}
         </div>
         <p className="fine-print">Categories: {RESEARCH_CATEGORIES.join(" · ")}</p>
+      </section>
+
+      <section className="section-inner">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">PORTFOLIO</p>
+            <h2>Projects</h2>
+          </div>
+        </div>
+        {projectSetupMissing ? (
+          <div className="panel">
+            <p>Project management is not configured. Apply the projects migration to enable project publishing.</p>
+          </div>
+        ) : (
+          <>
+            <div className="panel">
+              <h3>Create a project</h3>
+              <p>Use accurate project details and only publish work that is ready to appear in the public portfolio.</p>
+              <ProjectForm action={createProject} />
+            </div>
+            <div className="admin-list">
+              {(projectRecords ?? []).map((project) => (
+                <details className="panel admin-item" key={project.id}>
+                  <summary>
+                    <span>{project.title}</span>
+                    <span className="muted">
+                      {project.published ? "Published" : "Draft"}{project.featured ? " · Featured" : ""}
+                    </span>
+                  </summary>
+                  <ProjectForm action={updateProject} project={project} />
+                  <form action={deleteProject}>
+                    <input type="hidden" name="id" value={project.id} />
+                    <button className="button button-ghost" type="submit">Delete project</button>
+                  </form>
+                </details>
+              ))}
+              {(projectRecords ?? []).length === 0 && (
+                <div className="empty-research">
+                  <h3>No managed projects yet.</h3>
+                  <p>The existing CV project remains visible on the public portfolio until a project is published here.</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="section-inner">

@@ -1,0 +1,8 @@
+.project-list {
+  display: grid;
+  gap: 20px;
+}
+
+.project-list .project-detail {
+  margin: 0;
+}

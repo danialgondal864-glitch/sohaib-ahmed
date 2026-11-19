@@ -18,7 +18,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 3 — Contact submissions:** server-side validation, a database-backed limit of 3 messages per IP per rolling hour, HMAC-only IP fingerprints, and admin-only message reads are implemented. Apply the migration and configure the private service-role key before live submission testing.
 - **Phase 4 — Research and bookmarks:** article search/category filters, separate research sections and source links, and per-user bookmarks with RLS are implemented. Apply the research/bookmarks migration before using bookmarks.
 - **Phase 5 — Editorial administration:** server-authorized post create, update, publish/unpublish, and delete actions plus an admin-only contact inbox are implemented. Admin routes require the existing RLS migrations.
-- **Next phases:** project and user administration; media and website settings; production validation.
+- **Phase 6 — Project administration:** a projects table with public-read/admin-write RLS, server-authorized CRUD, and published-project display with CV-backed fallback are implemented. Project migrations `20261121_projects_admin.sql` and `20261122_projects_admin_write_grants.sql` have been applied.
+- **Next phases:** user administration; media and website settings; authenticated production validation and security review.
 
 ### Architecture decisions
 
@@ -46,11 +47,11 @@ Open http://localhost:3000.
 
 ## Supabase setup
 1. Create a Supabase project.
-2. Run `supabase/migrations/20261116_initial_platform.sql` for a new project, followed by `20261117_profiles_and_admin_roles.sql`, `20261118_contact_messages_with_rate_limit.sql`, and `20261119_research_and_bookmarks.sql`. The live project has been applied through this migration sequence.
+2. Run `supabase/migrations/20261116_initial_platform.sql` for a new project, followed by all remaining migrations in ascending version order. Apply pending migrations to an existing project in version order.
 3. Copy Project URL and anon/public key from Project Settings → API, and set `SUPABASE_SERVICE_ROLE_KEY` from the same project for server-side contact submissions.
 4. Add the values to `.env.local`. Keep the service-role key private; never prefix it with `NEXT_PUBLIC_` or expose it in browser code.
-5. In Authentication → URL Configuration, set your local Site URL to `http://localhost:3000`.
-6. Add `http://localhost:3000/auth/callback` and `https://sohaib-ahmed-five.vercel.app/auth/callback` to the allowed redirect URLs. Add the matching callback URL for any custom domain or Vercel preview environment you use.
+5. In Authentication → URL Configuration, set the Site URL to your production origin, for example `https://sohaib-ahmed-five.vercel.app`.
+6. Add `https://sohaib-ahmed-five.vercel.app/auth/callback` and (for local development) `http://localhost:3000/auth/callback` to the allowed redirect URLs. Add the matching callback URL for any custom domain or Vercel preview environment you use.
 7. Configure email confirmation and the Supabase confirmation/reset email templates. The confirmation link must return to the `emailRedirectTo` URL supplied by the app.
 
 ## Blog publishing
@@ -70,10 +71,13 @@ Post creation and mutation are restricted by row-level security to administrator
 Only publish factual research claims when their source links can be verified. Bookmark rows are private to the owning user; users can bookmark published posts only.
 Do not grant end users direct post-management access or expose a Supabase service-role key in browser code.
 
+## Project publishing
+Projects are managed in the administrator dashboard and are visible publicly only after publication. Public visitors can read published projects; create, update, and delete require an administrator session and matching database RLS policies. When no project is published or the project migration is not yet installed, the Projects page displays the CV-backed Bus Tracking System content from `src/lib/data.ts`.
+
 ## Deploy to Vercel
 1. Push this folder to a GitHub repository.
 2. In Vercel, import the repository.
-3. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` as Environment Variables. Keep the service-role key private and server-only.
+3. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` as Environment Variables. Keep the service-role key private and server-only. With the new Supabase key format, the publishable key is the public client key; the secret key maps to the server-only service role.
 4. Deploy.
 5. Add the Vercel production URL to Supabase Authentication → URL Configuration and allowed redirect URLs.
 6. Redeploy after changing environment variables.

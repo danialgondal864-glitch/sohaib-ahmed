@@ -12,6 +12,7 @@ export default function Signup() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const router = useRouter();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -19,10 +20,11 @@ export default function Signup() {
     setBusy(true);
     setError("");
     setMessage("");
+    const signupEmail = email.trim();
 
     try {
       const { data, error: signUpError } = await createClient().auth.signUp({
-        email,
+        email: signupEmail,
         password,
         options: {
           data: { full_name: name },
@@ -49,6 +51,39 @@ export default function Signup() {
     }
   }
 
+  async function resendConfirmation() {
+    const resendEmail = email.trim();
+    if (!resendEmail) {
+      setError("Enter your email address to request a new confirmation email.");
+      return;
+    }
+
+    setResending(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const { error: resendError } = await createClient().auth.resend({
+        type: "signup",
+        email: resendEmail,
+        options: {
+          emailRedirectTo: new URL("/auth/callback", window.location.origin).toString()
+        }
+      });
+
+      if (resendError) {
+        setError(resendError.message);
+        return;
+      }
+
+      setMessage("If this address still needs verification, a new confirmation email has been sent.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to resend the confirmation email. Please try again.");
+    } finally {
+      setResending(false);
+    }
+  }
+
   return (
     <div className="auth-wrap container">
       <form className="auth-card" onSubmit={submit}>
@@ -71,7 +106,11 @@ export default function Signup() {
             type="email"
             autoComplete="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setMessage("");
+              setError("");
+            }}
             required
           />
         </label>
@@ -91,6 +130,15 @@ export default function Signup() {
         {message && <p className="success" role="status">{message}</p>}
         <button className="button button-full" disabled={busy}>
           {busy ? "Creating…" : "Create account"}
+        </button>
+        <p className="auth-switch">Already signed up? Request another confirmation link.</p>
+        <button
+          className="button button-full"
+          type="button"
+          onClick={resendConfirmation}
+          disabled={busy || resending || !email.trim()}
+        >
+          {resending ? "Sending…" : "Resend confirmation email"}
         </button>
         <p className="auth-switch">Already registered? <Link href="/login">Log in</Link></p>
       </form>
