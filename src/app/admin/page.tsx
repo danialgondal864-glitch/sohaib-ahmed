@@ -1,14 +1,20 @@
 import { createPost, deletePost, updatePost } from "@/app/admin/actions";
 import { createProject, deleteProject, updateProject } from "@/app/admin/project-actions";
+import { updateUserRole } from "@/app/admin/user-actions";
 import PostForm from "@/app/admin/PostForm";
 import ProjectForm from "@/app/admin/ProjectForm";
+import UserRoleForm from "@/app/admin/UserRoleForm";
 import { requireAdmin } from "@/lib/auth/admin";
 import { RESEARCH_CATEGORIES } from "@/lib/posts";
 import { isProjectRecord } from "@/lib/projects";
+import type { AdminUser } from "@/lib/users";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminPageProps = {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; usersPage?: string }>;
 };
+
+const USERS_PER_PAGE = 50;
 
 const statusMessages: Record<string, string> = {
   created: "Article created.",
@@ -21,10 +27,20 @@ const statusMessages: Record<string, string> = {
   "project-deleted": "Project deleted.",
   "project-invalid": "Check the project fields and try again.",
   "project-save-failed": "The project could not be saved. Check that the slug is unique and the projects migration is applied.",
+  "user-role-updated": "User role updated.",
+  "user-role-invalid": "The selected user or role is invalid.",
+  "user-role-self": "You cannot change your own administrator role.",
+  "user-role-last-admin": "The last administrator cannot be demoted.",
+  "user-role-failed": "The user role could not be updated. Please try again.",
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   const { supabase, user } = await requireAdmin();
+  const { status, usersPage: usersPageValue } = await searchParams;
+  const parsedUsersPage = Number(usersPageValue);
+  const usersPage = Number.isSafeInteger(parsedUsersPage) && parsedUsersPage > 0
+    ? parsedUsersPage
+    : 1;
   const { data: posts, error: postsError } = await supabase
     .from("posts")
     .select("*")
@@ -57,6 +73,43 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     throw new Error("The portfolio projects table returned invalid data.");
   }
 
+  const adminClient = createAdminClient();
+  const { data: authUsers, error: authUsersError } = await adminClient.auth.admin.listUsers({
+    page: usersPage,
+    perPage: USERS_PER_PAGE
+  });
+  if (authUsersError) {
+    throw new Error(`Unable to load platform users: ${authUsersError.message}`);
+  }
+  let hasNextUsersPage = false;
+  if (authUsers.users.length === USERS_PER_PAGE) {
+    const { data: nextUsers, error: nextUsersError } = await adminClient.auth.admin.listUsers({
+      page: usersPage + 1,
+      perPage: USERS_PER_PAGE
+    });
+    if (nextUsersError) {
+      throw new Error(`Unable to check for additional platform users: ${nextUsersError.message}`);
+    }
+    hasNextUsersPage = nextUsers.users.length > 0;
+  }
+  const authUserIds = authUsers.users.map((authUser) => authUser.id);
+  const { data: profiles, error: profilesError } = authUserIds.length > 0
+    ? await adminClient.from("profiles").select("id, role").in("id", authUserIds)
+    : { data: [], error: null };
+  if (profilesError) {
+    throw new Error(`Unable to load user roles: ${profilesError.message}`);
+  }
+  const profileRoles = new Map((profiles ?? []).map((profile) => [profile.id, profile.role]));
+  const adminUsers: AdminUser[] = authUsers.users.map((authUser) => ({
+    id: authUser.id,
+    email: authUser.email ?? null,
+    fullName: typeof authUser.user_metadata.full_name === "string"
+      ? authUser.user_metadata.full_name
+      : null,
+    role: profileRoles.get(authUser.id) === "admin" ? "admin" : "user",
+    emailConfirmedAt: authUser.email_confirmed_at ?? null,
+    createdAt: authUser.created_at
+  }));
   const { data: messages, error: messagesError } = await supabase
     .from("contact_messages")
     .select("id, name, email, subject, message, created_at")
@@ -71,7 +124,6 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     throw new Error(`Unable to load contact messages: ${messagesError.message}`);
   }
 
-  const { status } = await searchParams;
   const statusMessage = status ? statusMessages[status] : undefined;
 
   return (
@@ -118,6 +170,51 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           )}
         </div>
         <p className="fine-print">Categories: {RESEARCH_CATEGORIES.join(" · ")}</p>
+      </section>
+
+      <section className="section-inner" id="users">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">ACCESS CONTROL</p>
+            <h2>Users</h2>
+          </div>
+        </div>
+        <p className="muted">
+          {adminUsers.length} {adminUsers.length === 1 ? "account" : "accounts"} on this page.
+          Role changes are protected by server authorization and database policies.
+        </p>
+        <div className="admin-list">
+          {adminUsers.map((adminUser) => (
+            <article className="panel admin-item" key={adminUser.id}>
+              <div className="admin-message-header">
+                <div>
+                  <h3>{adminUser.fullName || adminUser.email || "Account"}</h3>
+                  <p>{adminUser.email || "No email address"} · {adminUser.role}</p>
+                </div>
+                <p className="fine-print">
+                  {adminUser.emailConfirmedAt ? "Email verified" : "Email not verified"} · Joined{" "}
+                  <time dateTime={adminUser.createdAt}>
+                    {new Date(adminUser.createdAt).toLocaleDateString()}
+                  </time>
+                </p>
+              </div>
+              <UserRoleForm
+                action={updateUserRole}
+                user={adminUser}
+                disabled={adminUser.id === user.id}
+              />
+            </article>
+          ))}
+          {adminUsers.length === 0 && (
+            <div className="empty-research">
+              <h3>No accounts found on this page.</h3>
+            </div>
+          )}
+        </div>
+        <div className="admin-pagination">
+          {usersPage > 1 && <a className="button button-ghost" href={`/admin?usersPage=${usersPage - 1}#users`}>Previous users</a>}
+          {hasNextUsersPage && <a className="button button-ghost" href={`/admin?usersPage=${usersPage + 1}#users`}>Next users</a>}
+        </div>
       </section>
 
       <section className="section-inner">
