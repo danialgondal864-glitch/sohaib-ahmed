@@ -1,6 +1,7 @@
 import { createPost, deletePost, updatePost } from "@/app/admin/actions";
 import { createProject, deleteProject, updateProject } from "@/app/admin/project-actions";
 import { updateUserRole } from "@/app/admin/user-actions";
+import MediaLibrary from "@/app/admin/MediaLibrary";
 import PostForm from "@/app/admin/PostForm";
 import ProjectForm from "@/app/admin/ProjectForm";
 import UserRoleForm from "@/app/admin/UserRoleForm";
@@ -296,6 +297,16 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <p>Messages submitted through the public contact form will appear here.</p>
           </div>
         )}
+      </section>
+
+      <section className="section-inner">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">ASSETS</p>
+            <h2>Media library</h2>
+          </div>
+        </div>
+        <MediaLibrary />
       </section>
     </div>
   );

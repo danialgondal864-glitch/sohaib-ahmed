@@ -20,7 +20,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 5 — Editorial administration:** server-authorized post create, update, publish/unpublish, and delete actions plus an admin-only contact inbox are implemented. Admin routes require the existing RLS migrations.
 - **Phase 6 — Project administration:** a projects table with public-read/admin-write RLS, server-authorized CRUD, and published-project display with CV-backed fallback are implemented. Project migrations `20261121_projects_admin.sql` and `20261122_projects_admin_write_grants.sql` have been applied.
 - **Phase 7 — User administration:** an admin-only paginated user list and protected role updates are implemented. Migrations `20261123_admin_user_management_grants.sql` and `20261124_admin_role_updates_atomic.sql` are applied. Self-role changes and concurrent demotions of the last administrator are blocked.
-- **Next phases:** media and website settings; authenticated production validation and security review.
+- **Phase 8 — Media library:** public website images and private administrator-only media use separate Supabase Storage buckets with admin-only object operations, 5 MB image limits, and MIME restrictions. Apply `20261125_media_storage_buckets.sql`.
+- **Next phases:** website settings; authenticated production validation and security review.
 
 ### Architecture decisions
 
@@ -29,6 +30,7 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - Client users can read their own profile and update only `full_name`; role changes require a trusted database operator.
 - Post mutation is restricted by row-level security to administrator profiles. Public visitors can read published posts only.
 - Administrator user management uses a server-only Supabase secret key after the current session is independently verified as an administrator. The user list is paginated, role inputs are validated, self-demotion is blocked, and an atomic database function serializes demotions to protect the last administrator.
+- Storage object access is controlled by Supabase policies tied to the signed-in administrator profile. Public image URLs are intentionally public; private media access is limited to admins and uses one-minute signed links.
 - Supabase SSR and browser clients use the public anon key. The server-only `SUPABASE_SERVICE_ROLE_KEY` is used by the contact API for its restricted RPC and by administrator-only user management after role verification; it is never sent to the browser.
 
 ## Requirements
