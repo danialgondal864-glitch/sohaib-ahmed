@@ -1,15 +1,18 @@
 import { createPost, deletePost, updatePost } from "@/app/admin/actions";
 import { createProject, deleteProject, updateProject } from "@/app/admin/project-actions";
 import { updateUserRole } from "@/app/admin/user-actions";
+import { updateSiteSettings } from "@/app/admin/settings-actions";
 import MediaLibrary from "@/app/admin/MediaLibrary";
 import PostForm from "@/app/admin/PostForm";
 import ProjectForm from "@/app/admin/ProjectForm";
+import SettingsForm from "@/app/admin/SettingsForm";
 import UserRoleForm from "@/app/admin/UserRoleForm";
 import { requireAdmin } from "@/lib/auth/admin";
 import { RESEARCH_CATEGORIES } from "@/lib/posts";
 import { isProjectRecord } from "@/lib/projects";
 import type { AdminUser } from "@/lib/users";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getSiteSettings } from "@/lib/settings";
 
 type AdminPageProps = {
   searchParams: Promise<{ status?: string; usersPage?: string }>;
@@ -33,10 +36,14 @@ const statusMessages: Record<string, string> = {
   "user-role-self": "You cannot change your own administrator role.",
   "user-role-last-admin": "The last administrator cannot be demoted.",
   "user-role-failed": "The user role could not be updated. Please try again.",
+  "settings-updated": "Website settings updated.",
+  "settings-invalid": "Check the website settings fields and try again.",
+  "settings-failed": "Website settings could not be saved. Please try again.",
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   const { supabase, user } = await requireAdmin();
+  const siteSettings = await getSiteSettings();
   const { status, usersPage: usersPageValue } = await searchParams;
   const parsedUsersPage = Number(usersPageValue);
   const usersPage = Number.isSafeInteger(parsedUsersPage) && parsedUsersPage > 0
@@ -307,6 +314,19 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </div>
         </div>
         <MediaLibrary />
+      </section>
+
+      <section className="section-inner" id="settings">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">CONFIGURATION</p>
+            <h2>Website settings</h2>
+          </div>
+        </div>
+        <div className="panel">
+          <p>Manage search metadata, public contact details, social links, and the optional homepage announcement.</p>
+          <SettingsForm action={updateSiteSettings} settings={siteSettings} />
+        </div>
       </section>
     </div>
   );

@@ -181,6 +181,19 @@
   flex-wrap: wrap;
 }
 
+.hero-announcement {
+  width: fit-content;
+  max-width: 100%;
+  margin: 14px 0;
+  padding: 9px 13px;
+  border: 1px solid #2b6682;
+  border-radius: 7px;
+  background: #10283a;
+  color: #c7efff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 620px) {
   .admin-item summary,
   .admin-message-header {

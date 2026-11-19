@@ -1,7 +1,8 @@
-import { profile } from "@/lib/data";
+import { getSiteSettings } from "@/lib/settings";
 import ContactForm from "./ContactForm";
 
-export default function Contact() {
+export default async function Contact() {
+  const settings = await getSiteSettings();
   return (
     <div className="page-shell container">
       <div className="page-intro">
@@ -13,12 +14,16 @@ export default function Contact() {
         <div className="panel contact-details">
           <p className="eyebrow">CONTACT DETAILS</p>
           <h2>Let&apos;s connect.</h2>
-          <p><span className="muted">EMAIL</span><br /><a href={`mailto:${profile.email}`}>{profile.email}</a></p>
-          <p><span className="muted">PHONE</span><br />{profile.phones.join(" · ")}</p>
-          <p><span className="muted">LOCATION</span><br />{profile.location}</p>
-          <p className="fine-print">Contact details are displayed from the CV supplied for this portfolio.</p>
+          <p><span className="muted">EMAIL</span><br /><a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a></p>
+          {settings.contactPhones.length > 0 && (
+            <p><span className="muted">PHONE</span><br />{settings.contactPhones.join(" · ")}</p>
+          )}
+          {settings.contactLocation && (
+            <p><span className="muted">LOCATION</span><br />{settings.contactLocation}</p>
+          )}
+          <p className="fine-print">Public contact details can be updated in the administrator settings.</p>
         </div>
-        <ContactForm contactEmail={profile.email} />
+        <ContactForm contactEmail={settings.contactEmail} />
       </div>
     </div>
   );
