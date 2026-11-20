@@ -4,12 +4,18 @@ import { useMemo, useState } from "react";
 import ArticleCard from "@/components/ArticleCard";
 import type { PostCardData } from "@/lib/posts";
 
-export default function ArticleExplorer({ posts }: { posts: PostCardData[] }) {
+export default function ArticleExplorer({
+  posts,
+  categoryNames
+}: {
+  posts: PostCardData[];
+  categoryNames?: string[];
+}) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const categories = useMemo(
-    () => Array.from(new Set(posts.map((post) => post.category).filter(Boolean))).sort(),
-    [posts]
+    () => categoryNames ?? Array.from(new Set(posts.map((post) => post.category).filter(Boolean))).sort(),
+    [categoryNames, posts]
   );
   const filteredPosts = useMemo(() => {
     const query = search.trim().toLowerCase();

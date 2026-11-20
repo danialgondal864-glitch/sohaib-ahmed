@@ -2,20 +2,23 @@ import { createPost, deletePost, updatePost } from "@/app/admin/actions";
 import { createProject, deleteProject, updateProject } from "@/app/admin/project-actions";
 import { updateUserRole } from "@/app/admin/user-actions";
 import { updateSiteSettings } from "@/app/admin/settings-actions";
+import { createCategory, deleteCategory, updateCategory } from "@/app/admin/category-actions";
+import ContactMessageControls from "@/app/admin/ContactMessageControls";
+import CategoryForm from "@/app/admin/CategoryForm";
 import MediaLibrary from "@/app/admin/MediaLibrary";
 import PostForm from "@/app/admin/PostForm";
 import ProjectForm from "@/app/admin/ProjectForm";
 import SettingsForm from "@/app/admin/SettingsForm";
 import UserRoleForm from "@/app/admin/UserRoleForm";
 import { requireAdmin } from "@/lib/auth/admin";
-import { RESEARCH_CATEGORIES } from "@/lib/posts";
+import { parseResearchCategories } from "@/lib/categories";
 import { isProjectRecord } from "@/lib/projects";
 import type { AdminUser } from "@/lib/users";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSiteSettings } from "@/lib/settings";
 
 type AdminPageProps = {
-  searchParams: Promise<{ status?: string; usersPage?: string }>;
+  searchParams: Promise<{ status?: string; usersPage?: string; inbox?: string }>;
 };
 
 const USERS_PER_PAGE = 50;
@@ -39,12 +42,31 @@ const statusMessages: Record<string, string> = {
   "settings-updated": "Website settings updated.",
   "settings-invalid": "Check the website settings fields and try again.",
   "settings-failed": "Website settings could not be saved. Please try again.",
+  "category-created": "Category created.",
+  "category-updated": "Category updated.",
+  "category-deleted": "Category deleted.",
+  "category-invalid": "Check the category name and URL slug.",
+  "category-duplicate": "A category with that name or slug already exists.",
+  "category-in-use": "This category is still used by one or more articles.",
+  "category-failed": "The category could not be saved. Please try again.",
+  "message-updated": "Contact message updated.",
+  "message-invalid": "The selected contact message action is invalid.",
+  "message-failed": "The contact message could not be changed. Please refresh and try again.",
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   const { supabase, user } = await requireAdmin();
   const siteSettings = await getSiteSettings();
-  const { status, usersPage: usersPageValue } = await searchParams;
+  const { status, usersPage: usersPageValue, inbox } = await searchParams;
+  const showArchivedMessages = inbox === "archived";
+  const { data: categoryRows, error: categoriesError } = await supabase
+    .from("categories")
+    .select("id, name, slug, created_at, updated_at")
+    .order("name");
+  if (categoriesError) {
+    throw new Error(`Unable to load research categories: ${categoriesError.message}`);
+  }
+  const categories = parseResearchCategories(categoryRows);
   const parsedUsersPage = Number(usersPageValue);
   const usersPage = Number.isSafeInteger(parsedUsersPage) && parsedUsersPage > 0
     ? parsedUsersPage
@@ -118,15 +140,18 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     emailConfirmedAt: authUser.email_confirmed_at ?? null,
     createdAt: authUser.created_at
   }));
-  const { data: messages, error: messagesError } = await supabase
+  let messagesQuery = supabase
     .from("contact_messages")
-    .select("id, name, email, subject, message, created_at")
+    .select("id, name, email, subject, message, created_at, is_read, archived_at, status, updated_at")
     .order("created_at", { ascending: false })
     .limit(50);
+  messagesQuery = showArchivedMessages
+    ? messagesQuery.not("archived_at", "is", null)
+    : messagesQuery.is("archived_at", null);
+  const { data: messages, error: messagesError } = await messagesQuery;
   const messageSetupMissing =
     messagesError?.code === "PGRST205" ||
-    messagesError?.code === "42P01" ||
-    messagesError?.code === "42501";
+    messagesError?.code === "42P01";
 
   if (messagesError && !messageSetupMissing) {
     throw new Error(`Unable to load contact messages: ${messagesError.message}`);
@@ -153,7 +178,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <div className="panel">
           <h3>Create an article</h3>
           <p>Only publish factual claims with verifiable sources. Use the separate research fields to label facts, findings, opinions, and proposed solutions.</p>
-          <PostForm action={createPost} />
+          <PostForm action={createPost} categories={categories} />
         </div>
         <div className="admin-list">
           {(posts ?? []).map((post) => (
@@ -162,7 +187,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 <span>{post.title}</span>
                 <span className="muted">{post.published ? "Published" : "Draft"} · {post.category}</span>
               </summary>
-              <PostForm action={updatePost} post={post} />
+              <PostForm action={updatePost} post={post} categories={categories} />
               <p className="fine-print">Deleting an article also removes its bookmarks.</p>
               <form action={deletePost}>
                 <input type="hidden" name="id" value={post.id} />
@@ -177,7 +202,41 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </div>
           )}
         </div>
-        <p className="fine-print">Categories: {RESEARCH_CATEGORIES.join(" · ")}</p>
+      </section>
+
+      <section className="section-inner" id="categories">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">EDITORIAL ORGANIZATION</p>
+            <h2>Categories</h2>
+          </div>
+        </div>
+        <div className="panel">
+          <h3>Create a category</h3>
+          <p>Category renames update associated articles. Categories cannot be deleted while articles still use them.</p>
+          <CategoryForm action={createCategory} />
+        </div>
+        <div className="admin-list">
+          {categories.map((category) => (
+            <details className="panel admin-item" key={category.id}>
+              <summary>
+                <span>{category.name}</span>
+                <span className="muted">{category.slug}</span>
+              </summary>
+              <CategoryForm action={updateCategory} category={category} />
+              <form action={deleteCategory}>
+                <input type="hidden" name="id" value={category.id} />
+                <button className="button button-ghost" type="submit">Delete category</button>
+              </form>
+            </details>
+          ))}
+          {categories.length === 0 && (
+            <div className="empty-research">
+              <h3>No categories yet.</h3>
+              <p>Create a category before publishing a research article.</p>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="section-inner" id="users">
@@ -274,35 +333,57 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <div className="section-heading">
           <div>
             <p className="eyebrow">INBOX</p>
-            <h2>Contact messages</h2>
+            <h2 id="contact-inbox">Contact messages</h2>
           </div>
         </div>
         {messageSetupMissing ? (
           <div className="panel">
             <p>Contact message access is not configured. Apply the contact-message migrations to enable the inbox.</p>
           </div>
-        ) : (messages ?? []).length > 0 ? (
+        ) : (
+          <>
+            <nav className="admin-inbox-tabs" aria-label="Contact message views">
+              <a
+                className={`button ${!showArchivedMessages ? "" : "button-ghost"}`}
+                href="/admin#contact-inbox"
+                aria-current={!showArchivedMessages ? "page" : undefined}
+              >
+                Inbox
+              </a>
+              <a
+                className={`button ${showArchivedMessages ? "" : "button-ghost"}`}
+                href="/admin?inbox=archived#contact-inbox"
+                aria-current={showArchivedMessages ? "page" : undefined}
+              >
+                Archived
+              </a>
+            </nav>
+            {(messages ?? []).length > 0 ? (
           <div className="admin-list">
             {(messages ?? []).map((message) => (
               <article className="panel admin-item" key={message.id}>
                 <div className="admin-message-header">
                   <div>
-                    <h3>{message.subject}</h3>
+                    <h3>{message.subject}{!message.is_read ? " · Unread" : ""}</h3>
                     <p><a href={`mailto:${message.email}`}>{message.name} · {message.email}</a></p>
                   </div>
                   <time className="fine-print" dateTime={message.created_at}>
                     {new Date(message.created_at).toLocaleString()}
                   </time>
                 </div>
+                <p className="fine-print">Status: {message.status.replace("_", " ")} · {showArchivedMessages ? "Archived" : "In inbox"}</p>
                 <p className="admin-message-body">{message.message}</p>
+                <ContactMessageControls message={message} archived={showArchivedMessages} />
               </article>
             ))}
           </div>
-        ) : (
+            ) : (
           <div className="empty-research">
-            <h3>No contact messages yet.</h3>
-            <p>Messages submitted through the public contact form will appear here.</p>
+            <h3>{showArchivedMessages ? "No archived messages." : "No contact messages yet."}</h3>
+            <p>{showArchivedMessages ? "Archived contact messages will appear here." : "Messages submitted through the public contact form will appear here."}</p>
           </div>
+            )}
+          </>
         )}
       </section>
 

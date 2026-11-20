@@ -23,7 +23,9 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 8 — Media library:** public website images and private administrator-only media use separate Supabase Storage buckets with admin-only object operations, 5 MB image limits, and MIME restrictions. Migration `20261125_media_storage_buckets.sql` is applied.
 - **Phase 9 — Website settings:** administrators can update site metadata, public contact details, social links, and an optional homepage announcement. Migration `20261126_website_settings.sql` is applied.
 - **Phase 10 — CV refresh:** added the SparkSolution internship, updated skills and career objective, added the CV-listed projects and public links, and refreshed LinkedIn/GitHub/X links. Migration `20261127_cv_projects_and_links.sql` is applied.
-- **Remaining:** verify administrator actions (role changes, media upload/delete, and settings save) in an authenticated production session; complete a final launch checklist.
+- **Phase 11 — Admin categories:** category CRUD with public category browsing, post reassignment on rename, and deletion protection while articles reference a category.
+- **Phase 12 — Contact inbox workflow:** read/unread, archive/restore, delete, and new/in-progress/resolved statuses, protected by administrator-only policies.
+- **Remaining:** authenticated production tests for role changes, Storage upload/delete and settings save; live RLS permission checks and the final production smoke test.
 
 ### Architecture decisions
 
@@ -35,6 +37,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - Storage object access is controlled by Supabase policies tied to the signed-in administrator profile. Public image URLs are intentionally public; private media access is limited to admins and uses one-minute signed links.
 - Website settings are publicly readable because they contain only intentionally public presentation and contact details; only administrators can update them.
 - Public project links accept only HTTP/HTTPS URLs; CV project seeds use conflict-safe inserts so existing administrator-managed project rows are not overwritten.
+- Category updates cascade the displayed category name to related posts; a foreign key prevents deleting categories still in use.
+- Contact message workflow fields and delete/update operations are restricted by RLS and server actions that independently verify administrator access.
 - Supabase SSR and browser clients use the public anon key. The server-only `SUPABASE_SERVICE_ROLE_KEY` is used by the contact API for its restricted RPC and by administrator-only user management after role verification; it is never sent to the browser.
 
 ## Requirements

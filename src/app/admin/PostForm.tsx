@@ -1,4 +1,4 @@
-import { RESEARCH_CATEGORIES } from "@/lib/posts";
+import type { ResearchCategory } from "@/lib/categories";
 
 type PostRecord = {
   id: string;
@@ -19,6 +19,7 @@ type PostRecord = {
 type PostFormProps = {
   action: (formData: FormData) => Promise<void>;
   post?: PostRecord;
+  categories: ResearchCategory[];
 };
 
 function listValue(value: unknown): string {
@@ -27,7 +28,7 @@ function listValue(value: unknown): string {
     : "";
 }
 
-export default function PostForm({ action, post }: PostFormProps) {
+export default function PostForm({ action, post, categories }: PostFormProps) {
   const sources = Array.isArray(post?.sources)
     ? JSON.stringify(post.sources, null, 2)
     : "[]";
@@ -45,8 +46,8 @@ export default function PostForm({ action, post }: PostFormProps) {
       </label>
       <label>
         Category
-        <select name="category" defaultValue={post?.category || RESEARCH_CATEGORIES[0]} required>
-          {RESEARCH_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+        <select name="category" defaultValue={post?.category || categories[0]?.name} required disabled={categories.length === 0}>
+          {categories.map((category) => <option key={category.id} value={category.name}>{category.name}</option>)}
         </select>
       </label>
       <label>
@@ -92,7 +93,9 @@ export default function PostForm({ action, post }: PostFormProps) {
         <input name="published" type="checkbox" defaultChecked={post?.published ?? false} />
         Publish this article
       </label>
-      <button className="button" type="submit">{post ? "Save changes" : "Create article"}</button>
+      <button className="button" type="submit" disabled={categories.length === 0}>
+        {post ? "Save changes" : "Create article"}
+      </button>
     </form>
   );
 }

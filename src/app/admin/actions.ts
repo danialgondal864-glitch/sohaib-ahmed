@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth/admin";
-import { RESEARCH_CATEGORIES } from "@/lib/posts";
 
 type PostInput = {
   title: string;
@@ -109,7 +108,7 @@ function getSources(formData: FormData): PostInput["sources"] | null {
   return sources;
 }
 
-function parsePost(formData: FormData): PostInput | null {
+function parsePost(formData: FormData, categoryNames: ReadonlySet<string>): PostInput | null {
   const title = getText(formData, "title", 200);
   const slug = getText(formData, "slug", 200);
   const category = getText(formData, "category", 80);
@@ -122,7 +121,7 @@ function parsePost(formData: FormData): PostInput | null {
   const sources = getSources(formData);
   const readTimeValue = getText(formData, "read_time", 3);
   const readTime = readTimeValue ? Number(readTimeValue) : NaN;
-  const isCategory = RESEARCH_CATEGORIES.some((item) => item === category);
+  const isCategory = category !== null && categoryNames.has(category);
   const published = formData.get("published") === "on";
 
   if (
@@ -175,7 +174,14 @@ function saveFailed(): never {
 
 export async function createPost(formData: FormData) {
   const { supabase, user } = await requireAdmin();
-  const post = parsePost(formData);
+  const { data: categories, error: categoriesError } = await supabase
+    .from("categories")
+    .select("name");
+  if (categoriesError) {
+    console.error("Unable to load research categories for article creation.", categoriesError.code);
+    saveFailed();
+  }
+  const post = parsePost(formData, new Set((categories ?? []).map((category) => category.name)));
   if (!post) {
     invalidForm();
   }
@@ -197,7 +203,14 @@ export async function createPost(formData: FormData) {
 export async function updatePost(formData: FormData) {
   const { supabase } = await requireAdmin();
   const id = getText(formData, "id", 36);
-  const post = parsePost(formData);
+  const { data: categories, error: categoriesError } = await supabase
+    .from("categories")
+    .select("name");
+  if (categoriesError) {
+    console.error("Unable to load research categories for article update.", categoriesError.code);
+    saveFailed();
+  }
+  const post = parsePost(formData, new Set((categories ?? []).map((category) => category.name)));
   if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || !post) {
     invalidForm();
   }

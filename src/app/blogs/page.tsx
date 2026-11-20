@@ -1,42 +1,34 @@
 import ArticleExplorer from "@/components/ArticleExplorer";
 import { createClient } from "@/lib/supabase/server";
+import { parseResearchCategories } from "@/lib/categories";
 import type { PostCardData } from "@/lib/posts";
 
-const topics = [
-  {
-    title: "AI & Emerging Technologies",
-    description: "Research on AI developments, practical applications and emerging technology."
-  },
-  {
-    title: "Latest AI Tools",
-    description: "Hands-on tool discoveries, comparisons, workflows and useful guides."
-  },
-  {
-    title: "Research & Analysis",
-    description: "Evidence-led exploration of technical questions and new ideas."
-  },
-  {
-    title: "Problem Solving",
-    description: "Clear problem definitions, investigation and practical solution paths."
-  },
-  {
-    title: "Cloud & DevOps",
-    description: "Linux, cloud platforms, containers, deployment and operations."
-  },
-  {
-    title: "Future Technologies",
-    description: "Innovations worth understanding and their possible impact."
-  }
-];
+const topicDescriptions: Record<string, string> = {
+  "AI & Emerging Technologies": "Research on AI developments, practical applications and emerging technology.",
+  "Latest AI Tools": "Hands-on tool discoveries, comparisons, workflows and useful guides.",
+  "Research & Analysis": "Evidence-led exploration of technical questions and new ideas.",
+  "Problem Solving": "Clear problem definitions, investigation and practical solution paths.",
+  "Cloud & DevOps": "Linux, cloud platforms, containers, deployment and operations.",
+  "Future Technologies": "Innovations worth understanding and their possible impact."
+};
 
 export default async function Blogs() {
   const isConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
   let posts: PostCardData[] = [];
+  let categories: ReturnType<typeof parseResearchCategories> = [];
 
   if (isConfigured) {
     const supabase = await createClient();
+    const { data: categoryRows, error: categoriesError } = await supabase
+      .from("categories")
+      .select("id, name, slug, created_at, updated_at")
+      .order("name");
+    if (categoriesError) {
+      throw new Error(`Unable to load research categories: ${categoriesError.message}`);
+    }
+    categories = parseResearchCategories(categoryRows);
     const { data, error } = await supabase
       .from("posts")
       .select("id, title, slug, category, excerpt, read_time, created_at")
@@ -58,11 +50,11 @@ export default async function Blogs() {
         <p>A research-driven space for technology exploration, practical problem solving, innovative ideas and useful AI tools.</p>
       </div>
       <div className="topic-grid">
-        {topics.map((topic, index) => (
-          <div className="topic-card" key={topic.title}>
-            <span className="topic-number">0{index + 1}</span>
-            <h3>{topic.title}</h3>
-            <p>{topic.description}</p>
+        {categories.map((category, index) => (
+          <div className="topic-card" key={category.id}>
+            <span className="topic-number">{String(index + 1).padStart(2, "0")}</span>
+            <h3>{category.name}</h3>
+            <p>{topicDescriptions[category.name] ?? "Explore articles, research, and practical notes in this topic."}</p>
           </div>
         ))}
       </div>
@@ -74,7 +66,7 @@ export default async function Blogs() {
           </div>
         </div>
         {posts.length > 0 ? (
-          <ArticleExplorer posts={posts} />
+          <ArticleExplorer posts={posts} categoryNames={categories.map((category) => category.name)} />
         ) : (
           <div className="empty-research">
             <h3>{isConfigured ? "No published articles yet." : "Research publishing is not configured yet."}</h3>

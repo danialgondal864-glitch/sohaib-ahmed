@@ -194,6 +194,49 @@
   overflow-wrap: anywhere;
 }
 
+.admin-category-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.admin-category-form label,
+.admin-inbox-controls label {
+  display: grid;
+  gap: 7px;
+  color: #c8d5e4;
+  font-size: 12px;
+}
+
+.admin-category-form input,
+.admin-inbox-controls select {
+  min-width: 0;
+  background: #091321;
+  border: 1px solid #2b3d52;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: white;
+}
+
+.admin-inbox-tabs,
+.admin-inbox-controls,
+.admin-inbox-controls form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-inbox-tabs {
+  margin: 16px 0;
+}
+
+.admin-inbox-controls {
+  margin-top: 16px;
+}
+
 @media (max-width: 620px) {
   .admin-item summary,
   .admin-message-header {
@@ -209,6 +252,13 @@
   .admin-media-toolbar,
   .admin-media-upload,
   .admin-media-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-category-form,
+  .admin-inbox-controls,
+  .admin-inbox-controls form {
     align-items: stretch;
     flex-direction: column;
   }
