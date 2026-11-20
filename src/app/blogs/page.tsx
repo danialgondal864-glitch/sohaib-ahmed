@@ -1,6 +1,7 @@
 import ArticleExplorer from "@/components/ArticleExplorer";
 import { createClient } from "@/lib/supabase/server";
 import { parseResearchCategories } from "@/lib/categories";
+import { resolveCoverImageUrl } from "@/lib/author-media";
 import type { PostCardData } from "@/lib/posts";
 
 export default async function Blogs() {
@@ -24,7 +25,7 @@ export default async function Blogs() {
     categories = parseResearchCategories(categoryRows);
     const { data, error } = await supabase
       .from("posts")
-      .select("id, title, slug, category, subcategory_id, content_type, excerpt, read_time, duration_seconds, cover_image_url, tags, created_at, author_id")
+      .select("id, title, slug, category, subcategory_id, content_type, excerpt, read_time, duration_seconds, cover_image_url, cover_image_path, tags, created_at, author_id")
       .eq("published", true)
       .eq("workflow_status", "published")
       .order("published_at", { ascending: false });
@@ -46,15 +47,17 @@ export default async function Blogs() {
       throw new Error(`Unable to load public author details: ${authorsError.message}`);
     }
     const authors = new Map((authorRows ?? []).map((author) => [author.id, author]));
-    posts = (data ?? []).map((post) => {
+    posts = await Promise.all((data ?? []).map(async (post) => {
       const author = post.author_id ? authors.get(post.author_id) : undefined;
+      const { cover_image_path: coverImagePath, ...publicPost } = post;
       return {
-        ...post,
+        ...publicPost,
+        cover_image_url: await resolveCoverImageUrl(supabase, post.cover_image_url, coverImagePath),
         subcategory: post.subcategory_id ? subcategoryNames.get(post.subcategory_id) ?? null : null,
         author_name: author?.display_name ?? null,
         author_slug: author?.author_slug ?? null
       };
-    });
+    }));
   }
 
   return (

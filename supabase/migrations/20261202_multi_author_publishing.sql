@@ -109,6 +109,7 @@ alter table public.posts
   add column if not exists published_at timestamptz,
   add column if not exists scheduled_at timestamptz,
   add column if not exists cover_image_url text,
+  add column if not exists cover_image_path text,
   add column if not exists video_url text,
   add column if not exists audio_url text,
   add column if not exists duration_seconds integer,
@@ -147,6 +148,13 @@ alter table public.posts
     check (cardinality(tags) <= 30),
   add constraint posts_cover_image_url_check
     check (cover_image_url is null or (cover_image_url ~* '^https?://' and cover_image_url !~ '://[^/]*@')),
+  add constraint posts_cover_image_path_check
+    check (
+      cover_image_path is null
+      or cover_image_path ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.](avif|gif|jpg|png|webp)$'
+    ),
+  add constraint posts_cover_image_source_exclusive_check
+    check (cover_image_path is null or cover_image_url is null),
   add constraint posts_video_url_check
     check (video_url is null or (video_url ~* '^https?://' and video_url !~ '://[^/]*@')),
   add constraint posts_audio_url_check
@@ -243,6 +251,10 @@ begin
       or new.review_feedback is not null
       or new.published_at is not null
       or new.scheduled_at is not null
+      or (
+        new.cover_image_path is not null
+        and split_part(new.cover_image_path, '/', 1) <> auth.uid()::text
+      )
       or new.featured
     then
       raise exception using errcode = '42501', message = 'Authors may only create their own draft or review submission.';
@@ -280,6 +292,10 @@ begin
       or new.review_feedback is distinct from old.review_feedback
       or new.published_at is distinct from old.published_at
       or new.scheduled_at is distinct from old.scheduled_at
+      or (
+        new.cover_image_path is not null
+        and split_part(new.cover_image_path, '/', 1) <> auth.uid()::text
+      )
       or new.featured is distinct from old.featured
     then
       raise exception using errcode = '42501', message = 'Authors may only edit their own drafts or requested changes.';
@@ -755,5 +771,58 @@ with check (
   exists (
     select 1 from public.profiles
     where profiles.id = auth.uid() and profiles.role = 'admin'
+  )
+);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'author-submission-media',
+  'author-submission-media',
+  false,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
+)
+on conflict (id) do nothing;
+
+drop policy if exists "Authors can upload their own submission covers" on storage.objects;
+create policy "Authors can upload their own submission covers"
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'author-submission-media'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists "Authors and admins can read submission covers" on storage.objects;
+create policy "Authors and admins can read submission covers"
+on storage.objects for select to authenticated
+using (
+  bucket_id = 'author-submission-media'
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid() and profiles.role = 'admin'
+    )
+    or exists (
+      select 1 from public.posts
+      where posts.cover_image_path = storage.objects.name
+        and posts.published
+        and posts.workflow_status = 'published'
+        and (posts.scheduled_at is null or posts.scheduled_at <= now())
+    )
+  )
+);
+
+drop policy if exists "Published submission covers are publicly readable" on storage.objects;
+create policy "Published submission covers are publicly readable"
+on storage.objects for select to anon, authenticated
+using (
+  bucket_id = 'author-submission-media'
+  and exists (
+    select 1 from public.posts
+    where posts.cover_image_path = storage.objects.name
+      and posts.published
+      and posts.workflow_status = 'published'
+      and (posts.scheduled_at is null or posts.scheduled_at <= now())
   )
 );

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import ArticleCard from "@/components/ArticleCard";
+import PublicationGrid from "@/components/PublicationGrid";
 import { createClient } from "@/lib/supabase/server";
+import { resolveCoverImageUrl } from "@/lib/author-media";
 import type { PostCardData } from "@/lib/posts";
 
 type AuthorPageProps = {
@@ -45,7 +46,7 @@ export default async function PublicAuthorPage({ params }: AuthorPageProps) {
 
   const supabase = await createClient();
   const { data, error } = await supabase.from("posts")
-    .select("id, title, slug, category, content_type, excerpt, read_time, created_at")
+    .select("id, title, slug, category, content_type, excerpt, read_time, created_at, cover_image_url, cover_image_path")
     .eq("author_id", author.id)
     .eq("published", true)
     .eq("workflow_status", "published")
@@ -54,7 +55,13 @@ export default async function PublicAuthorPage({ params }: AuthorPageProps) {
     throw new Error(`Unable to load the author's publications: ${error.message}`);
   }
 
-  const publications: PostCardData[] = data ?? [];
+  const publications: PostCardData[] = await Promise.all((data ?? []).map(async (post) => {
+    const { cover_image_path: coverImagePath, ...publicPost } = post;
+    return {
+      ...publicPost,
+      cover_image_url: await resolveCoverImageUrl(supabase, post.cover_image_url, coverImagePath)
+    };
+  }));
 
   return (
     <div className="page-shell container">
@@ -88,9 +95,7 @@ export default async function PublicAuthorPage({ params }: AuthorPageProps) {
           </div>
         </div>
         {publications.length > 0 ? (
-          <div className="article-grid">
-            {publications.map((post) => <ArticleCard key={post.id} post={post} />)}
-          </div>
+          <PublicationGrid posts={publications} />
         ) : (
           <div className="empty-research"><p>No public publications yet.</p></div>
         )}

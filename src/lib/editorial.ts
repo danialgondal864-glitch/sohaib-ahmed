@@ -18,6 +18,7 @@ export type EditorialInput = {
   video_url: string | null;
   audio_url: string | null;
   cover_image_url: string | null;
+  cover_image_path: string | null;
   duration_seconds: number | null;
   tags: string[];
   seo_title: string | null;
@@ -197,7 +198,10 @@ export function parseEditorialForm(
     "vimeo.com", "www.vimeo.com", "player.vimeo.com"
   ]));
   const audioUrl = getWebUrl(formData, "audio_url", 2048);
+  const coverImagePath = getOptionalText(formData, "cover_image_path", 128);
   const coverImageUrl = getWebUrl(formData, "cover_image_url", 2048);
+  const selectedCoverImagePath = coverImageUrl ? null : coverImagePath.value;
+  const coverImageUploadInProgress = formData.get("cover_image_uploading") === "true";
   const durationValue = getOptionalText(formData, "duration_seconds", 5);
   const duration = durationValue.value ? Number(durationValue.value) : null;
   const seoTitle = getOptionalText(formData, "seo_title", 120);
@@ -224,6 +228,10 @@ export function parseEditorialForm(
     !tags ||
     videoUrl === undefined ||
     audioUrl === undefined ||
+    !coverImagePath.valid ||
+    coverImageUploadInProgress ||
+    (coverImagePath.value !== null &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(avif|gif|jpg|png|webp)$/i.test(coverImagePath.value)) ||
     coverImageUrl === undefined ||
     !durationValue.valid ||
     !seoTitle.valid ||
@@ -264,6 +272,7 @@ export function parseEditorialForm(
     video_url: videoUrl,
     audio_url: audioUrl,
     cover_image_url: coverImageUrl,
+    cover_image_path: selectedCoverImagePath,
     duration_seconds: duration,
     tags,
     seo_title: seoTitle.value,

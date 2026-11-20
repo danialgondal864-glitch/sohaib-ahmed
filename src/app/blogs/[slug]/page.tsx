@@ -6,6 +6,7 @@ import BookmarkButton from "@/components/BookmarkButton";
 import MarkdownContent from "@/components/MarkdownContent";
 import ReportContentForm from "@/app/blogs/ReportContentForm";
 import { createClient } from "@/lib/supabase/server";
+import { resolveCoverImageUrl } from "@/lib/author-media";
 
 type ResearchSource = {
   title: string;
@@ -162,6 +163,7 @@ export default async function BlogPost({
   if (!post) {
     notFound();
   }
+  const coverImageUrl = await resolveCoverImageUrl(supabase, post.cover_image_url, post.cover_image_path);
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError) {
@@ -201,10 +203,10 @@ export default async function BlogPost({
       </p>
       <h1>{post.title}</h1>
       <p className="article-excerpt">{post.excerpt}</p>
-      {post.cover_image_url && (
+      {coverImageUrl && (
         <Image
           className="publication-cover publication-cover-detail"
-          src={post.cover_image_url}
+          src={coverImageUrl}
           alt=""
           width={1200}
           height={675}

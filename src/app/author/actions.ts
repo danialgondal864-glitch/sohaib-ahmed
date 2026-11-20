@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/user";
 import { parseEditorialForm } from "@/lib/editorial";
+import { notifyAdministratorsOfSubmission } from "@/lib/email";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -92,6 +93,12 @@ export async function saveSubmission(formData: FormData) {
   if (!editorial) {
     redirect("/author?status=invalid#submissions");
   }
+  if (
+    editorial.cover_image_path &&
+    !editorial.cover_image_path.startsWith(`${user.id}/`)
+  ) {
+    redirect("/author?status=invalid#submissions");
+  }
 
   const matchingCategory = categories.find((category) => category.name === editorial.category);
   const matchingSubcategory = editorial.subcategory_id
@@ -132,7 +139,19 @@ export async function saveSubmission(formData: FormData) {
   }
 
   revalidateAuthorContent(data.slug);
-  redirect(`/author?status=${status === "pending_review" ? "submitted" : "draft-saved"}#submissions`);
+  if (status === "pending_review") {
+    const emailStatus = await notifyAdministratorsOfSubmission({
+      title: editorial.title,
+      contentType: editorial.content_type
+    });
+    const statusMessage = emailStatus === "sent"
+      ? "submitted"
+      : emailStatus === "not_configured"
+        ? "submitted-email-unconfigured"
+        : "submitted-email-failed";
+    redirect(`/author?status=${statusMessage}#submissions`);
+  }
+  redirect("/author?status=draft-saved#submissions");
 }
 
 export async function deleteSubmission(formData: FormData) {

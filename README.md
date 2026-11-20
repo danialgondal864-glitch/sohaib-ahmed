@@ -9,7 +9,9 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - Supabase-backed published blog listing and article detail pages
 - Multi-author articles, video and podcast submissions with administrator review
 - Author profiles, workflow notifications, review history, content reports and scheduled publishing
-- Markdown authoring with safe rendering, source sections, dynamic categories, tags and SEO metadata
+- Markdown authoring with safe rendering, source sections, dynamic categories, tags, SEO metadata, and paginated publication grids
+- Private author cover-image uploads with access limited to the owner, administrators, and public posts
+- Workflow email notifications through a server-only Resend integration
 - Responsive dark navy / cyan design
 - Additive Supabase migration with ownership-aware publishing RLS and workflow triggers
 - Vercel-ready deployment configuration
@@ -28,8 +30,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 10 — CV refresh:** added the SparkSolution internship, updated skills and career objective, added the CV-listed projects and public links, and refreshed LinkedIn/GitHub/X links. Migration `20261127_cv_projects_and_links.sql` is applied.
 - **Phase 11 — Admin categories:** category CRUD with public category browsing, post reassignment on rename, and deletion protection while articles reference a category.
 - **Phase 12 — Contact inbox workflow:** read/unread, archive/restore, delete, and new/in-progress/resolved statuses, protected by administrator-only policies.
-- **Phase 13 — Multi-author publishing (implemented in source, not production-verified):** author drafts and submissions, server/database-enforced ownership and review transitions, administrator review decisions, feedback/audit history, in-app notifications, article/video/podcast metadata, public author profiles, category hierarchy, tags, Markdown editing, reports, SEO metadata, sitemap, and scheduled publication endpoint.
-- **Remaining:** apply and verify `20261202_multi_author_publishing.sql` in Supabase; test regular-user/admin/unauthenticated RLS behavior and all review/report flows; configure `CRON_SECRET` and a compatible Vercel Cron plan; complete production smoke tests and deployment. Contributor file uploads and email notifications are not implemented yet; video/audio/cover media are currently external HTTPS URLs.
+- **Phase 13 — Multi-author publishing (implemented in source, not production-verified):** author drafts and submissions, server/database-enforced ownership and review transitions, administrator review decisions, feedback/audit history, in-app and email notifications, private contributor cover-image uploads, article/video/podcast metadata, public author profiles, category hierarchy, tags, Markdown editing, reports, paginated publication grids, SEO metadata, sitemap, and scheduled publication endpoint.
+- **Remaining:** apply and verify `20261202_multi_author_publishing.sql` in Supabase; test regular-user/admin/unauthenticated RLS behavior, private media access, email delivery, and all review/report flows; configure `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, and a compatible Vercel Cron plan; complete production smoke tests and deployment. Video and podcast media remain externally hosted; only cover images are uploaded by contributors.
 
 ### Architecture decisions
 
@@ -47,7 +49,9 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - Public author profiles use a restricted view that exposes only profile presentation fields; private profiles remain unavailable to anonymous readers.
 - Markdown is rendered with raw HTML disabled. Video links are restricted to YouTube/Vimeo in the application, while podcast and image URLs accept HTTP(S) links without embedded credentials.
 - Scheduled publishing is executed by a server-only Vercel Cron endpoint protected by `CRON_SECRET`; the endpoint invokes a database function granted only to `service_role`.
-- Contributor media uses external URLs for now. Do not make a draft-media bucket public; a private upload and publish-time promotion workflow remains to be designed and tested.
+- Contributor cover images use a private Supabase Storage bucket with owner-scoped upload/read policies. Anonymous readers can create signed links only for images referenced by currently published posts; previously issued signed links may remain valid for up to five minutes after unpublishing. Video and podcast files remain externally hosted.
+- Email notifications are sent from server actions after successful submission/review changes and from the scheduled-publishing endpoint. Delivery requires a Resend API key and a verified sender; failed or unconfigured delivery is surfaced while the database-backed in-app notification remains available.
+- Publication grid pagination currently limits rendered cards to 12 at a time; the query still loads the published set, so server-side query pagination remains a scalability improvement.
 - Contact message workflow fields and delete/update operations are restricted by RLS and server actions that independently verify administrator access.
 - Authenticated post write grants are paired with the existing admin-only RLS policies, enabling the administrator article CRUD forms without granting writes to ordinary users.
 - Supabase SSR and browser clients use the public anon key. The server-only `SUPABASE_SERVICE_ROLE_KEY` is used by the contact API for its restricted RPC and by administrator-only user management after role verification; it is never sent to the browser.
@@ -78,9 +82,9 @@ Open http://localhost:3000.
 7. Configure email confirmation and the Supabase confirmation/reset email templates. The confirmation link must return to the `emailRedirectTo` URL supplied by the app.
 
 ## Blog publishing
-The Knowledge Hub reads only published rows and supports articles, externally hosted videos, and podcasts. Authors use `/author` to save a draft or submit it for review. Administrators use the review queue in `/admin` to approve, request changes, decline, publish, schedule, unpublish, archive, or restore content. Public browsing includes dynamic active categories, type filters, tags, search, author pages, and SEO metadata.
+The Knowledge Hub reads only published rows and supports articles, externally hosted videos, and podcasts. Authors use `/author` to save a draft or submit it for review. Authors may upload a private cover image (JPEG, PNG, WebP, GIF, or AVIF; maximum 5 MB); signed links are issued only while its post is published and expire after five minutes. Administrators use the review queue in `/admin` to approve, request changes, decline, publish, schedule, unpublish, archive, or restore content. Public browsing includes dynamic active categories, type filters, tags, search, author pages, pagination, and SEO metadata.
 
-Article bodies use Markdown. Raw HTML is not rendered. Video URLs must use YouTube or Vimeo; podcast audio and cover-image URLs must be HTTP(S) without embedded credentials. Contributor media upload is not available yet.
+Article bodies use Markdown. Raw HTML is not rendered. Video URLs must use YouTube or Vimeo; podcast audio and externally hosted cover-image URLs must be HTTP(S) without embedded credentials. Uploaded contributor cover images are stored privately and served using short-lived signed URLs after publication.
 
 The database migration adds:
 - Contributor profile fields and a restricted public author-profile view.
@@ -111,7 +115,7 @@ Projects are managed in the administrator dashboard and are visible publicly onl
 ## Deploy to Vercel
 1. Push this folder to a GitHub repository.
 2. In Vercel, import the repository.
-3. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL`, and a high-entropy `CRON_SECRET` as Environment Variables. Keep the Supabase secret key private and server-only.
+3. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL`, a high-entropy `CRON_SECRET`, `RESEND_API_KEY`, and `EMAIL_FROM` as Environment Variables. Keep the Supabase secret key and Resend API key private and server-only; use a sender address verified by Resend.
 4. Deploy.
 5. Add the Vercel production URL to Supabase Authentication → URL Configuration and allowed redirect URLs.
 6. Redeploy after changing environment variables.
@@ -126,7 +130,8 @@ Projects are managed in the administrator dashboard and are visible publicly onl
 - Apply all migrations through `20261202_multi_author_publishing.sql` before deploying this version; the new routes expect those columns, tables, policies, and functions.
 - Add `CRON_SECRET` to Vercel before enabling scheduled publication. Test the endpoint with a valid and invalid bearer token.
 - Test author submission and direct PostgREST write attempts with a normal account, then review and publish with an administrator. A successful UI flow alone is not a substitute for RLS verification.
-- Contributor image/audio/video file upload and email notification delivery remain pending.
+- Test author cover-image upload/read isolation using regular and administrator accounts. Verify anonymous signed links work only for published posts and fail for drafts/unpublished content.
+- Configure and verify Resend sender identity and `RESEND_API_KEY`; test submission, administrator review, and scheduled-publication email notices. In-app notifications remain available if delivery is unconfigured or fails.
 - Review privacy, cookie, and data-retention requirements.
 - Add a real favicon/brand asset if desired.
 - Promote an administrator only after signup and only from a trusted SQL editor, for example: `update public.profiles set role = 'admin' where id = '<verified-user-uuid>';`. Never expose a role-management API to untrusted clients.

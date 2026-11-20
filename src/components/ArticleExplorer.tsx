@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import ArticleCard from "@/components/ArticleCard";
+import PublicationGrid from "@/components/PublicationGrid";
 import type { PostCardData } from "@/lib/posts";
 
 export default function ArticleExplorer({
@@ -74,12 +74,10 @@ export default function ArticleExplorer({
         </label>
       </div>
       <p className="fine-print" role="status">
-        Showing {filteredPosts.length} of {posts.length} publications.
+        Matching publications: {filteredPosts.length} of {posts.length}.
       </p>
       {filteredPosts.length > 0 ? (
-        <div className="article-grid">
-          {filteredPosts.map((post) => <ArticleCard key={post.id} post={post} />)}
-        </div>
+        <PublicationGrid posts={filteredPosts} />
       ) : (
         <div className="empty-research">
           <h3>No matching publications.</h3>

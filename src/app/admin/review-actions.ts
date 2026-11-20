@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth/admin";
+import { notifyAuthorOfReview } from "@/lib/email";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const REVIEW_ACTIONS = new Set([
@@ -65,7 +66,7 @@ export async function reviewContent(formData: FormData) {
 
   const { data: post, error: postError } = await supabase
     .from("posts")
-    .select("slug")
+    .select("slug, title, author_id")
     .eq("id", id)
     .maybeSingle();
   if (postError || !post) {
@@ -88,5 +89,20 @@ export async function reviewContent(formData: FormData) {
   revalidatePath("/author");
   revalidatePath("/blogs");
   revalidatePath(`/blogs/${post.slug}`);
-  redirect("/admin?status=review-updated#review-queue");
+  let status = "review-updated";
+  if (post.author_id) {
+    const emailStatus = await notifyAuthorOfReview({
+      authorId: post.author_id,
+      title: post.title,
+      slug: post.slug,
+      action,
+      feedback
+    });
+    if (emailStatus === "not_configured") {
+      status = "review-updated-email-unconfigured";
+    } else if (emailStatus === "failed") {
+      status = "review-updated-email-failed";
+    }
+  }
+  redirect(`/admin?status=${status}#review-queue`);
 }

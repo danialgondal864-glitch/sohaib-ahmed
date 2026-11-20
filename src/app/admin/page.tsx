@@ -19,6 +19,7 @@ import { isProjectRecord } from "@/lib/projects";
 import type { AdminUser } from "@/lib/users";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSiteSettings } from "@/lib/settings";
+import { resolveCoverImageUrl } from "@/lib/author-media";
 
 type AdminPageProps = {
   searchParams: Promise<{ status?: string; usersPage?: string; inbox?: string }>;
@@ -53,6 +54,8 @@ const statusMessages: Record<string, string> = {
   "category-in-use": "This category is still used by one or more articles.",
   "category-failed": "The category could not be saved. Please try again.",
   "review-updated": "The publication review decision was saved.",
+  "review-updated-email-unconfigured": "The review decision was saved. Email delivery is not configured; the author still has an in-app notification.",
+  "review-updated-email-failed": "The review decision was saved, but its email notification could not be delivered. The author still has an in-app notification.",
   "review-invalid": "Check the review action, feedback, or scheduled time.",
   "review-failed": "The review decision could not be saved. Refresh and try again.",
   "report-updated": "The content report was updated.",
@@ -89,6 +92,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   if (postsError) {
     throw new Error(`Unable to load research articles: ${postsError.message}`);
   }
+  const reviewPosts = await Promise.all((posts ?? [])
+    .filter((post) => post.workflow_status === "pending_review")
+    .map(async (post) => ({
+      ...post,
+      coverPreviewUrl: await resolveCoverImageUrl(supabase, post.cover_image_url, post.cover_image_path)
+    })));
 
   const { data: reports, error: reportsError } = await supabase.from("content_reports")
     .select("id, post_title, post_slug, reason, details, status, admin_notes, created_at")
@@ -213,17 +222,20 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </div>
         </div>
         <div className="admin-list">
-          {(posts ?? []).filter((post) => post.workflow_status === "pending_review").map((post) => (
+          {reviewPosts.map((post) => (
             <details className="panel admin-item" key={`review-${post.id}`}>
               <summary>
                 <span>{post.title}</span>
                 <span className="muted">{post.content_type} · {post.category} · submitted {post.submitted_at ? new Date(post.submitted_at).toLocaleString() : "recently"}</span>
               </summary>
               <p>{post.excerpt}</p>
+              {post.coverPreviewUrl && (
+                <img className="review-cover-preview" src={post.coverPreviewUrl} alt="Submitted cover image" />
+              )}
               <ReviewControls id={post.id} status={post.workflow_status} />
             </details>
           ))}
-          {(posts ?? []).every((post) => post.workflow_status !== "pending_review") && (
+          {reviewPosts.length === 0 && (
             <div className="empty-research"><p>No submissions are waiting for review.</p></div>
           )}
         </div>

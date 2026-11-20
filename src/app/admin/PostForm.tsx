@@ -1,4 +1,5 @@
 import type { ResearchCategory } from "@/lib/categories";
+import AuthorMediaUpload from "@/components/AuthorMediaUpload";
 import MarkdownEditor from "@/components/MarkdownEditor";
 
 type PostRecord = {
@@ -20,6 +21,7 @@ type PostRecord = {
   video_url: string | null;
   audio_url: string | null;
   cover_image_url: string | null;
+  cover_image_path: string | null;
   duration_seconds: number | null;
   tags: string[];
   seo_title: string | null;
@@ -31,6 +33,7 @@ type PostFormProps = {
   post?: PostRecord;
   categories: ResearchCategory[];
   isAdmin?: boolean;
+  userId?: string;
 };
 
 function listValue(value: unknown): string {
@@ -39,7 +42,7 @@ function listValue(value: unknown): string {
     : "";
 }
 
-export default function PostForm({ action, post, categories, isAdmin = true }: PostFormProps) {
+export default function PostForm({ action, post, categories, isAdmin = true, userId }: PostFormProps) {
   const sources = Array.isArray(post?.sources)
     ? JSON.stringify(post.sources, null, 2)
     : "[]";
@@ -112,9 +115,14 @@ export default function PostForm({ action, post, categories, isAdmin = true }: P
         <input name="audio_url" type="url" defaultValue={post?.audio_url ?? ""} maxLength={2048} />
       </label>
       <label>
-        Cover image URL
+        Cover image URL (optional)
         <input name="cover_image_url" type="url" defaultValue={post?.cover_image_url ?? ""} maxLength={2048} />
       </label>
+      {isAdmin ? (
+        <input type="hidden" name="cover_image_path" value={post?.cover_image_path ?? ""} />
+      ) : userId ? (
+        <AuthorMediaUpload userId={userId} initialPath={post?.cover_image_path} />
+      ) : null}
       <label>
         Duration in seconds (video or podcast)
         <input

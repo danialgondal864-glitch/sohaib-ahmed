@@ -303,6 +303,16 @@
   border-color: #47627b;
 }
 
+.review-cover-preview {
+  display: block;
+  width: min(100%, 480px);
+  max-height: 270px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: cover;
+}
+
 .review-history ol {
   display: grid;
   gap: 12px;

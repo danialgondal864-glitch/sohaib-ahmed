@@ -10,6 +10,8 @@ type AuthorPageProps = {
 
 const statusMessages: Record<string, string> = {
   submitted: "Your publication was submitted for administrator review.",
+  "submitted-email-unconfigured": "Your publication was submitted. Email delivery is not configured; administrators can still see the in-app notification.",
+  "submitted-email-failed": "Your publication was submitted, but its email notification could not be delivered. Administrators can still see the in-app notification.",
   "draft-saved": "Your draft was saved.",
   deleted: "Your draft was deleted.",
   "profile-saved": "Your author profile was saved.",
@@ -104,7 +106,7 @@ export default async function AuthorPage({ searchParams }: AuthorPageProps) {
         </div>
         <div className="panel">
           <p>Contributors can submit articles, videos, and podcasts. Submissions stay private until an administrator approves and publishes them. Video and podcast media are linked from an external HTTPS provider in this release.</p>
-          <PostForm action={saveSubmission} categories={categories} isAdmin={false} />
+          <PostForm action={saveSubmission} categories={categories} isAdmin={false} userId={user.id} />
         </div>
         <div className="admin-list">
           {posts.map((post) => {
@@ -127,7 +129,7 @@ export default async function AuthorPage({ searchParams }: AuthorPageProps) {
                 )}
                 {editable ? (
                   <>
-                    <PostForm action={saveSubmission} post={post} categories={categories} isAdmin={false} />
+                    <PostForm action={saveSubmission} post={post} categories={categories} isAdmin={false} userId={user.id} />
                     <form action={deleteSubmission}>
                       <input type="hidden" name="id" value={post.id} />
                       <button className="button button-ghost" type="submit">Delete submission</button>
