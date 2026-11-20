@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import PublicationGrid from "@/components/PublicationGrid";
+import ArticleCard from "@/components/ArticleCard";
+import PublicationPagination from "@/components/PublicationPagination";
 import { createClient } from "@/lib/supabase/server";
 import { resolveCoverImageUrl } from "@/lib/author-media";
-import type { PostCardData } from "@/lib/posts";
+import { POSTS_PER_PAGE, type PostCardData } from "@/lib/posts";
 
 type AuthorPageProps = {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ page?: string | string[] }>;
 };
+
+function parsePage(value: string | string[] | undefined): number {
+  const parsed = Number(Array.isArray(value) ? value[0] : value);
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 1_000_000 ? parsed : 1;
+}
 
 async function getAuthor(slug: string) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -37,25 +44,45 @@ export async function generateMetadata({ params }: AuthorPageProps): Promise<Met
   };
 }
 
-export default async function PublicAuthorPage({ params }: AuthorPageProps) {
-  const { slug } = await params;
+export default async function PublicAuthorPage({ params, searchParams }: AuthorPageProps) {
+  const [{ slug }, queryParams] = await Promise.all([params, searchParams]);
   const author = await getAuthor(slug);
   if (!author) {
     notFound();
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.from("posts")
-    .select("id, title, slug, category, content_type, excerpt, read_time, created_at, cover_image_url, cover_image_path")
-    .eq("author_id", author.id)
-    .eq("published", true)
-    .eq("workflow_status", "published")
-    .order("published_at", { ascending: false });
-  if (error) {
-    throw new Error(`Unable to load the author's publications: ${error.message}`);
+  const authorId = author.id;
+  const requestedPage = parsePage(queryParams.page);
+  function buildPublicationsQuery() {
+    return supabase.from("posts")
+      .select("id, title, slug, category, content_type, excerpt, read_time, created_at, cover_image_url, cover_image_path", { count: "exact" })
+      .eq("author_id", authorId)
+      .eq("published", true)
+      .eq("workflow_status", "published")
+      .order("published_at", { ascending: false })
+      .order("id");
   }
+  const firstResult = await buildPublicationsQuery()
+    .range((requestedPage - 1) * POSTS_PER_PAGE, requestedPage * POSTS_PER_PAGE - 1);
+  if (firstResult.error) {
+    throw new Error(`Unable to load the author's publications: ${firstResult.error.message}`);
+  }
+  const totalPublications = firstResult.count ?? 0;
+  const pageCount = Math.max(1, Math.ceil(totalPublications / POSTS_PER_PAGE));
+  const page = Math.min(requestedPage, pageCount);
+  const publicationRows = page === requestedPage
+    ? firstResult.data ?? []
+    : await (async () => {
+        const correctedResult = await buildPublicationsQuery()
+          .range((page - 1) * POSTS_PER_PAGE, page * POSTS_PER_PAGE - 1);
+        if (correctedResult.error) {
+          throw new Error(`Unable to load the author's publications: ${correctedResult.error.message}`);
+        }
+        return correctedResult.data ?? [];
+      })();
 
-  const publications: PostCardData[] = await Promise.all((data ?? []).map(async (post) => {
+  const publications: PostCardData[] = await Promise.all(publicationRows.map(async (post) => {
     const { cover_image_path: coverImagePath, ...publicPost } = post;
     return {
       ...publicPost,
@@ -94,8 +121,22 @@ export default async function PublicAuthorPage({ params }: AuthorPageProps) {
             <h2>Publications by {author.display_name}</h2>
           </div>
         </div>
+        <p className="fine-print" role="status">
+          Showing {totalPublications === 0 ? 0 : (page - 1) * POSTS_PER_PAGE + 1}–
+          {Math.min(page * POSTS_PER_PAGE, totalPublications)} of {totalPublications} publications.
+        </p>
         {publications.length > 0 ? (
-          <PublicationGrid posts={publications} />
+          <>
+            <div className="article-grid">
+              {publications.map((post) => <ArticleCard key={post.id} post={post} />)}
+            </div>
+            <PublicationPagination
+              path={`/authors/${encodeURIComponent(slug)}`}
+              params={{}}
+              page={page}
+              pageCount={pageCount}
+            />
+          </>
         ) : (
           <div className="empty-research"><p>No public publications yet.</p></div>
         )}

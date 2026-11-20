@@ -1,7 +1,8 @@
 .research-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) minmax(180px, 220px) auto;
   gap: 12px;
+  align-items: end;
   margin-bottom: 16px;
 }
 
@@ -21,6 +22,18 @@
   padding: 12px;
   color: white;
   outline: none;
+}
+
+.research-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.research-filter-actions .text-link {
+  margin-top: 0;
+  white-space: nowrap;
 }
 
 .research-controls input:focus,
@@ -229,5 +242,11 @@
 
   .publication-pagination {
     gap: 8px;
+  }
+}
+
+@media (min-width: 621px) and (max-width: 980px) {
+  .research-controls {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 1fr);
   }
 }

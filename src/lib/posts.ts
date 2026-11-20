@@ -1,3 +1,5 @@
+export const POSTS_PER_PAGE = 12;
+
 export type PostCardData = {
   id: string;
   title: string;

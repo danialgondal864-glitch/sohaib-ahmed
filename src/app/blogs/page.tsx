@@ -2,14 +2,51 @@ import ArticleExplorer from "@/components/ArticleExplorer";
 import { createClient } from "@/lib/supabase/server";
 import { parseResearchCategories } from "@/lib/categories";
 import { resolveCoverImageUrl } from "@/lib/author-media";
-import type { PostCardData } from "@/lib/posts";
+import { CONTENT_TYPES } from "@/lib/editorial";
+import { POSTS_PER_PAGE, type PostCardData } from "@/lib/posts";
 
-export default async function Blogs() {
+type BlogsProps = {
+  searchParams: Promise<{
+    search?: string | string[];
+    category?: string | string[];
+    type?: string | string[];
+    page?: string | string[];
+  }>;
+};
+
+function firstParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function parsePage(value: string | string[] | undefined): number {
+  const parsed = Number(firstParam(value));
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 1_000_000 ? parsed : 1;
+}
+
+function normalizeSearch(value: string | string[] | undefined): string {
+  return firstParam(value)
+    .slice(0, 80)
+    .replace(/[^a-zA-Z0-9 -]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export default async function Blogs({ searchParams }: BlogsProps) {
+  const params = await searchParams;
   const isConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
   let posts: PostCardData[] = [];
   let categories: ReturnType<typeof parseResearchCategories> = [];
+  let totalPosts = 0;
+  let page = 1;
+  let pageCount = 1;
+  const search = normalizeSearch(params.search);
+  const requestedPage = parsePage(params.page);
+  const candidateType = firstParam(params.type);
+  const contentType = CONTENT_TYPES.find((type) => type === candidateType) ?? "all";
+  let selectedCategory = "all";
+  let selectedSubcategoryId: string | null = null;
 
   if (isConfigured) {
     const supabase = await createClient();
@@ -23,19 +60,79 @@ export default async function Blogs() {
       throw new Error(`Unable to load research categories: ${categoriesError.message}`);
     }
     categories = parseResearchCategories(categoryRows);
-    const { data, error } = await supabase
-      .from("posts")
-      .select("id, title, slug, category, subcategory_id, content_type, excerpt, read_time, duration_seconds, cover_image_url, cover_image_path, tags, created_at, author_id")
-      .eq("published", true)
-      .eq("workflow_status", "published")
-      .order("published_at", { ascending: false });
+    const categoryCandidate = firstParam(params.category);
+    const selectedCategoryRow = categories.find((item) =>
+      item.name === categoryCandidate &&
+      (item.content_type === "all" || contentType === "all" || item.content_type === contentType)
+    );
+    selectedCategory = selectedCategoryRow?.name ?? "all";
+    selectedSubcategoryId = selectedCategoryRow?.parent_id ? selectedCategoryRow.id : null;
 
-    if (error) {
-      throw new Error(`Unable to load published content: ${error.message}`);
+    let matchingAuthorIds: string[] = [];
+    if (search) {
+      const { data: matchingAuthors, error: matchingAuthorsError } = await supabase
+        .from("author_profiles")
+        .select("id")
+        .ilike("display_name", `%${search}%`)
+        .limit(1000);
+      if (matchingAuthorsError) {
+        throw new Error(`Unable to search public author profiles: ${matchingAuthorsError.message}`);
+      }
+      matchingAuthorIds = (matchingAuthors ?? []).map((author) => author.id);
     }
 
-    const subcategoryNames = new Map(categories.map((category) => [category.id, category.name]));
-    const authorIds = Array.from(new Set((data ?? [])
+    function buildPostsQuery() {
+      let query = supabase
+        .from("posts")
+        .select("id, title, slug, category, subcategory_id, content_type, excerpt, read_time, duration_seconds, cover_image_url, cover_image_path, tags, created_at, author_id", { count: "exact" })
+        .eq("published", true)
+        .eq("workflow_status", "published");
+      if (contentType !== "all") {
+        query = query.eq("content_type", contentType);
+      }
+      if (selectedCategory !== "all") {
+        query = selectedSubcategoryId
+          ? query.eq("subcategory_id", selectedSubcategoryId)
+          : query.eq("category", selectedCategory);
+      }
+      if (search) {
+        const searchFilters = [
+          `title.ilike.%${search}%`,
+          `excerpt.ilike.%${search}%`,
+          `category.ilike.%${search}%`
+        ];
+        if (matchingAuthorIds.length > 0) {
+          searchFilters.push(`author_id.in.(${matchingAuthorIds.join(",")})`);
+        }
+        if (/^[a-zA-Z0-9-]{1,40}$/.test(search)) {
+          searchFilters.push(`tags.cs.{${search}}`);
+        }
+        query = query.or(searchFilters.join(","));
+      }
+      return query.order("published_at", { ascending: false }).order("id");
+    }
+
+    const firstResult = await buildPostsQuery()
+      .range((requestedPage - 1) * POSTS_PER_PAGE, requestedPage * POSTS_PER_PAGE - 1);
+    if (firstResult.error) {
+      throw new Error(`Unable to load published content: ${firstResult.error.message}`);
+    }
+    totalPosts = firstResult.count ?? 0;
+    pageCount = Math.max(1, Math.ceil(totalPosts / POSTS_PER_PAGE));
+    page = Math.min(requestedPage, pageCount);
+    const pageRows = page === requestedPage
+      ? firstResult.data ?? []
+      : await (async () => {
+          const correctedResult = await buildPostsQuery()
+            .range((page - 1) * POSTS_PER_PAGE, page * POSTS_PER_PAGE - 1);
+          if (correctedResult.error) {
+            throw new Error(`Unable to load published content: ${correctedResult.error.message}`);
+          }
+          return correctedResult.data ?? [];
+        })();
+
+    const subcategoryNames = new Map(categories.map((item) => [item.id, item.name]));
+    const authorIds = Array.from(new Set(pageRows
       .map((post) => post.author_id)
       .filter((id): id is string => typeof id === "string")));
     const { data: authorRows, error: authorsError } = authorIds.length > 0
@@ -47,7 +144,7 @@ export default async function Blogs() {
       throw new Error(`Unable to load public author details: ${authorsError.message}`);
     }
     const authors = new Map((authorRows ?? []).map((author) => [author.id, author]));
-    posts = await Promise.all((data ?? []).map(async (post) => {
+    posts = await Promise.all(pageRows.map(async (post) => {
       const author = post.author_id ? authors.get(post.author_id) : undefined;
       const { cover_image_path: coverImagePath, ...publicPost } = post;
       return {
@@ -83,13 +180,19 @@ export default async function Blogs() {
             <h2>From the research desk</h2>
           </div>
         </div>
-        {posts.length > 0 ? (
+        {isConfigured ? (
           <ArticleExplorer
             posts={posts}
             categories={categories.map((category) => ({
               name: category.name,
               content_type: category.content_type
             }))}
+            totalPosts={totalPosts}
+            page={page}
+            pageCount={pageCount}
+            search={search}
+            category={selectedCategory}
+            contentType={contentType}
           />
         ) : (
           <div className="empty-research">
