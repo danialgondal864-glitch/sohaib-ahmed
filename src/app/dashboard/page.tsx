@@ -87,6 +87,7 @@ export default async function Dashboard() {
         <p className="eyebrow">YOUR ACCOUNT</p>
         <h1>Welcome, <span className="gradient-text">{displayName}.</span></h1>
         <p>{user.email}</p>
+        <Link className="button button-ghost" href="/author">Open author studio</Link>
         {isAdmin && (
           <Link className="button" href="/admin">Open admin dashboard</Link>
         )}

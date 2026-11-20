@@ -9,7 +9,7 @@ type BookmarkButtonProps = {
   userId: string;
 };
 
-const migrationMessage = "Article bookmarks are not available yet. Please try again later.";
+const migrationMessage = "Publication bookmarks are not available yet. Please try again later.";
 
 export default function BookmarkButton({ postId, userId }: BookmarkButtonProps) {
   const [saved, setSaved] = useState(false);
@@ -105,9 +105,9 @@ export default function BookmarkButton({ postId, userId }: BookmarkButtonProps) 
         disabled={busy}
         aria-pressed={saved}
       >
-        {busy ? "Saving…" : saved ? "Remove bookmark" : "Save article"}
+        {busy ? "Saving…" : saved ? "Remove bookmark" : "Save publication"}
       </button>
-      <Link className="text-link" href="/dashboard#saved-articles">View saved articles</Link>
+      <Link className="text-link" href="/dashboard#saved-articles">View saved publications</Link>
     </div>
   );
 }

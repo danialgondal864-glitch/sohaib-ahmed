@@ -58,6 +58,138 @@
   margin: 20px 0;
 }
 
+.article-content {
+  white-space: normal;
+}
+
+.markdown-content {
+  color: #c4d0df;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  color: var(--text);
+  line-height: 1.35;
+  margin-top: 1.6em;
+}
+
+.markdown-content a {
+  color: var(--cyan);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.markdown-content blockquote {
+  margin-left: 0;
+  padding-left: 18px;
+  border-left: 2px solid var(--cyan);
+  color: var(--muted);
+}
+
+.markdown-content pre {
+  overflow-x: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #070d16;
+}
+
+.markdown-content :not(pre) > code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #172437;
+}
+
+.markdown-content table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.markdown-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.article-page audio {
+  width: 100%;
+  margin: 10px 0;
+}
+
+.publication-tags {
+  display: block;
+  margin-top: 10px;
+  color: #8da3bc;
+  font-size: 10px;
+}
+
+.publication-cover {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+
+.publication-cover-detail {
+  max-height: 520px;
+  border-radius: 10px;
+}
+
+.author-notifications .button {
+  white-space: nowrap;
+}
+
+.author-avatar {
+  width: 104px;
+  height: 104px;
+  object-fit: cover;
+  border: 1px solid #2b6682;
+  border-radius: 50%;
+}
+
+.content-report-form,
+.content-report-controls {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.content-report-form label,
+.content-report-controls label {
+  display: grid;
+  gap: 7px;
+  color: #c8d5e4;
+  font-size: 12px;
+}
+
+.content-report-form select,
+.content-report-form textarea,
+.content-report-controls select,
+.content-report-controls textarea {
+  width: 100%;
+  background: #091321;
+  border: 1px solid #2b3d52;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: white;
+}
+
 @media (max-width: 620px) {
   .research-controls {
     grid-template-columns: 1fr;

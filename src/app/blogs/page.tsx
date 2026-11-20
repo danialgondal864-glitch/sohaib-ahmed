@@ -3,15 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { parseResearchCategories } from "@/lib/categories";
 import type { PostCardData } from "@/lib/posts";
 
-const topicDescriptions: Record<string, string> = {
-  "AI & Emerging Technologies": "Research on AI developments, practical applications and emerging technology.",
-  "Latest AI Tools": "Hands-on tool discoveries, comparisons, workflows and useful guides.",
-  "Research & Analysis": "Evidence-led exploration of technical questions and new ideas.",
-  "Problem Solving": "Clear problem definitions, investigation and practical solution paths.",
-  "Cloud & DevOps": "Linux, cloud platforms, containers, deployment and operations.",
-  "Future Technologies": "Innovations worth understanding and their possible impact."
-};
-
 export default async function Blogs() {
   const isConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -23,7 +14,9 @@ export default async function Blogs() {
     const supabase = await createClient();
     const { data: categoryRows, error: categoriesError } = await supabase
       .from("categories")
-      .select("id, name, slug, created_at, updated_at")
+      .select("id, name, slug, description, content_type, parent_id, sort_order, is_active, created_at, updated_at")
+      .eq("is_active", true)
+      .order("sort_order")
       .order("name");
     if (categoriesError) {
       throw new Error(`Unable to load research categories: ${categoriesError.message}`);
@@ -31,15 +24,37 @@ export default async function Blogs() {
     categories = parseResearchCategories(categoryRows);
     const { data, error } = await supabase
       .from("posts")
-      .select("id, title, slug, category, excerpt, read_time, created_at")
+      .select("id, title, slug, category, subcategory_id, content_type, excerpt, read_time, duration_seconds, cover_image_url, tags, created_at, author_id")
       .eq("published", true)
-      .order("created_at", { ascending: false });
+      .eq("workflow_status", "published")
+      .order("published_at", { ascending: false });
 
     if (error) {
-      throw new Error(`Unable to load research articles: ${error.message}`);
+      throw new Error(`Unable to load published content: ${error.message}`);
     }
 
-    posts = data ?? [];
+    const subcategoryNames = new Map(categories.map((category) => [category.id, category.name]));
+    const authorIds = Array.from(new Set((data ?? [])
+      .map((post) => post.author_id)
+      .filter((id): id is string => typeof id === "string")));
+    const { data: authorRows, error: authorsError } = authorIds.length > 0
+      ? await supabase.from("author_profiles")
+          .select("id, display_name, author_slug")
+          .in("id", authorIds)
+      : { data: [], error: null };
+    if (authorsError) {
+      throw new Error(`Unable to load public author details: ${authorsError.message}`);
+    }
+    const authors = new Map((authorRows ?? []).map((author) => [author.id, author]));
+    posts = (data ?? []).map((post) => {
+      const author = post.author_id ? authors.get(post.author_id) : undefined;
+      return {
+        ...post,
+        subcategory: post.subcategory_id ? subcategoryNames.get(post.subcategory_id) ?? null : null,
+        author_name: author?.display_name ?? null,
+        author_slug: author?.author_slug ?? null
+      };
+    });
   }
 
   return (
@@ -54,7 +69,7 @@ export default async function Blogs() {
           <div className="topic-card" key={category.id}>
             <span className="topic-number">{String(index + 1).padStart(2, "0")}</span>
             <h3>{category.name}</h3>
-            <p>{topicDescriptions[category.name] ?? "Explore articles, research, and practical notes in this topic."}</p>
+            <p>{category.description || "Explore publications in this topic."}</p>
           </div>
         ))}
       </div>
@@ -66,11 +81,17 @@ export default async function Blogs() {
           </div>
         </div>
         {posts.length > 0 ? (
-          <ArticleExplorer posts={posts} categoryNames={categories.map((category) => category.name)} />
+          <ArticleExplorer
+            posts={posts}
+            categories={categories.map((category) => ({
+              name: category.name,
+              content_type: category.content_type
+            }))}
+          />
         ) : (
           <div className="empty-research">
-            <h3>{isConfigured ? "No published articles yet." : "Research publishing is not configured yet."}</h3>
-            <p>Published articles will appear here with category filters, search, clearly labeled research sections, and source references.</p>
+            <h3>{isConfigured ? "No published content yet." : "Research publishing is not configured yet."}</h3>
+            <p>Published articles, videos, and podcasts will appear here with category filters, search, and source references.</p>
           </div>
         )}
       </section>

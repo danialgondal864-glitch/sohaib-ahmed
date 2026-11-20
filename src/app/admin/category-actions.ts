@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth/admin";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CATEGORY_TYPES = new Set(["all", "article", "video", "podcast"]);
 
 function getText(formData: FormData, key: string, maxLength: number): string | null {
   const value = formData.get(key);
@@ -18,10 +19,43 @@ function getText(formData: FormData, key: string, maxLength: number): string | n
 function getCategory(formData: FormData) {
   const name = getText(formData, "name", 80);
   const slug = getText(formData, "slug", 80);
-  if (!name || !slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+  const descriptionValue = formData.get("description");
+  const description = typeof descriptionValue === "string" && descriptionValue.trim().length <= 500
+    ? descriptionValue.trim()
+    : null;
+  const contentType = getText(formData, "content_type", 16);
+  const parentIdValue = formData.get("parent_id");
+  const parentId = typeof parentIdValue === "string" && parentIdValue.length <= 36
+    ? parentIdValue.trim() || null
+    : undefined;
+  const sortOrderValue = getText(formData, "sort_order", 5);
+  const sortOrder = sortOrderValue ? Number(sortOrderValue) : NaN;
+  const isActiveValue = getText(formData, "is_active", 5);
+  if (
+    !name ||
+    !slug ||
+    description === null ||
+    !contentType ||
+    !CATEGORY_TYPES.has(contentType) ||
+    parentId === undefined ||
+    (parentId !== null && !UUID_PATTERN.test(parentId)) ||
+    !Number.isInteger(sortOrder) ||
+    sortOrder < 0 ||
+    sortOrder > 10000 ||
+    (isActiveValue !== "true" && isActiveValue !== "false") ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
+  ) {
     return null;
   }
-  return { name, slug };
+  return {
+    name,
+    slug,
+    description,
+    content_type: contentType,
+    parent_id: parentId,
+    sort_order: sortOrder,
+    is_active: isActiveValue === "true"
+  };
 }
 
 function revalidateCategories() {
@@ -51,7 +85,7 @@ export async function updateCategory(formData: FormData) {
   const { supabase } = await requireAdmin();
   const id = getText(formData, "id", 36);
   const category = getCategory(formData);
-  if (!id || !UUID_PATTERN.test(id) || !category) {
+  if (!id || !UUID_PATTERN.test(id) || !category || category.parent_id === id) {
     redirect("/admin?status=category-invalid#categories");
   }
 

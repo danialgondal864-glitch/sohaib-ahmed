@@ -1,6 +1,10 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import BookmarkButton from "@/components/BookmarkButton";
+import MarkdownContent from "@/components/MarkdownContent";
+import ReportContentForm from "@/app/blogs/ReportContentForm";
 import { createClient } from "@/lib/supabase/server";
 
 type ResearchSource = {
@@ -93,8 +97,49 @@ function ResearchSection({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-export default async function BlogPost({ params }: { params: Promise<{ slug: string }> }) {
+export async function generateMetadata({
+  params
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
   const { slug } = await params;
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return {};
+  }
+  const supabase = await createClient();
+  const { data: post, error } = await supabase.from("posts")
+    .select("title, excerpt, content_type, seo_title, seo_description")
+    .eq("slug", slug)
+    .eq("published", true)
+    .eq("workflow_status", "published")
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Unable to load publication metadata: ${error.message}`);
+  }
+  if (!post) {
+    return {};
+  }
+  const title = post.seo_title || post.title;
+  const description = post.seo_description || post.excerpt;
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: post.content_type === "article" ? "article" : "website"
+    }
+  };
+}
+
+export default async function BlogPost({
+  params,
+  searchParams
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ report?: string }>;
+}) {
+  const [{ slug }, { report }] = await Promise.all([params, searchParams]);
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     notFound();
   }
@@ -105,6 +150,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
     .select("*")
     .eq("slug", slug)
     .eq("published", true)
+    .eq("workflow_status", "published")
     .single();
 
   if (postError?.code === "PGRST116") {
@@ -127,24 +173,81 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
   const opinions = readTextList(post.opinions);
   const proposals = readTextList(post.proposed_solutions);
   const { sources, invalidCount: invalidSources } = readSources(post.sources);
+  const contentType = post.content_type ?? "article";
+  const { data: author, error: authorError } = post.author_id
+    ? await supabase.from("author_profiles")
+        .select("display_name, author_slug")
+        .eq("id", post.author_id)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (authorError) {
+    throw new Error(`Unable to load publication author: ${authorError.message}`);
+  }
+  const { data: subcategory, error: subcategoryError } = post.subcategory_id
+    ? await supabase.from("categories")
+        .select("name")
+        .eq("id", post.subcategory_id)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (subcategoryError) {
+    throw new Error(`Unable to load publication subcategory: ${subcategoryError.message}`);
+  }
 
   return (
     <article className="article-page container">
-      <p className="eyebrow">{post.category || "RESEARCH"} · {post.read_time || 5} MIN READ</p>
+      <p className="eyebrow">
+        {post.category || "RESEARCH"}{subcategory?.name ? ` / ${subcategory.name}` : ""} · {contentType.toUpperCase()}
+        {contentType === "article" ? ` · ${post.read_time || 5} MIN READ` : ""}
+      </p>
       <h1>{post.title}</h1>
       <p className="article-excerpt">{post.excerpt}</p>
+      {post.cover_image_url && (
+        <Image
+          className="publication-cover publication-cover-detail"
+          src={post.cover_image_url}
+          alt=""
+          width={1200}
+          height={675}
+          priority
+          unoptimized
+        />
+      )}
+      {author?.author_slug && (
+        <p className="fine-print">
+          By <Link className="text-link" href={`/authors/${author.author_slug}`}>{author.display_name}</Link>
+        </p>
+      )}
       {user ? (
         <BookmarkButton postId={post.id} userId={user.id} />
       ) : (
-        <p className="fine-print"><Link className="text-link" href="/login">Log in to save this article.</Link></p>
+        <p className="fine-print"><Link className="text-link" href="/login">Log in to save this publication.</Link></p>
+      )}
+      {contentType === "video" && post.video_url && (
+        <section className="research-section">
+          <h2>Watch this video</h2>
+          <a className="button" href={post.video_url} target="_blank" rel="noopener noreferrer">
+            Open video on its hosting platform ↗
+          </a>
+        </section>
+      )}
+      {contentType === "podcast" && post.audio_url && (
+        <section className="research-section">
+          <h2>Listen to this episode</h2>
+          <audio controls preload="none" src={post.audio_url}>
+            <a href={post.audio_url}>Download or open the audio</a>
+          </audio>
+          {post.duration_seconds && (
+            <p className="fine-print">Duration: {Math.floor(post.duration_seconds / 60)} minutes</p>
+          )}
+        </section>
       )}
       <ResearchSection title="Verified facts" items={verifiedFacts} />
       <ResearchSection title="Research findings" items={findings} />
       <ResearchSection title="Opinions" items={opinions} />
       <ResearchSection title="Proposed solutions" items={proposals} />
       <div className="article-content">
-        <h2>Article</h2>
-        {post.content}
+        <h2>{contentType === "article" ? "Article" : "Show notes"}</h2>
+        <MarkdownContent source={post.content} />
       </div>
       {sources.length > 0 && (
         <section className="research-section">
@@ -166,6 +269,17 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
         <p className="error" role="note">This article has factual research sections but no source links are attached yet.</p>
       )}
       <p className="fine-print">Research facts, findings, opinions, and proposed solutions are labeled separately. Sources are listed for verification.</p>
+      {report === "reported" && <p className="success" role="status">Thank you. Your report was sent to the administrators.</p>}
+      {report === "already-reported" && <p className="fine-print" role="status">You have already sent a report for this reason.</p>}
+      {report === "report-failed" && <p className="error" role="status">The report could not be sent. Please try again later.</p>}
+      <section className="research-section">
+        <h2>Report this publication</h2>
+        {user ? (
+          <ReportContentForm postId={post.id} />
+        ) : (
+          <p><Link className="text-link" href="/login">Log in to report a concern.</Link></p>
+        )}
+      </section>
     </article>
   );
 }

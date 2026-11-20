@@ -7,6 +7,9 @@ import ContactMessageControls from "@/app/admin/ContactMessageControls";
 import CategoryForm from "@/app/admin/CategoryForm";
 import MediaLibrary from "@/app/admin/MediaLibrary";
 import PostForm from "@/app/admin/PostForm";
+import ReviewControls from "@/app/admin/ReviewControls";
+import ReportControls from "@/app/admin/ReportControls";
+import { markNotificationRead } from "@/app/author/actions";
 import ProjectForm from "@/app/admin/ProjectForm";
 import SettingsForm from "@/app/admin/SettingsForm";
 import UserRoleForm from "@/app/admin/UserRoleForm";
@@ -27,8 +30,8 @@ const statusMessages: Record<string, string> = {
   created: "Article created.",
   updated: "Article updated.",
   deleted: "Article deleted.",
-  invalid: "Check the article fields and source JSON, then try again.",
-  "save-failed": "The article could not be saved. Check that the slug is unique and the research migration is applied.",
+  invalid: "Check the publication fields, media URLs, and source JSON, then try again.",
+  "save-failed": "The publication could not be saved. Check that the slug is unique and the publishing migration is applied.",
   "project-created": "Project created.",
   "project-updated": "Project updated.",
   "project-deleted": "Project deleted.",
@@ -45,10 +48,16 @@ const statusMessages: Record<string, string> = {
   "category-created": "Category created.",
   "category-updated": "Category updated.",
   "category-deleted": "Category deleted.",
-  "category-invalid": "Check the category name and URL slug.",
+  "category-invalid": "Check the category name, URL slug, type, and parent.",
   "category-duplicate": "A category with that name or slug already exists.",
   "category-in-use": "This category is still used by one or more articles.",
   "category-failed": "The category could not be saved. Please try again.",
+  "review-updated": "The publication review decision was saved.",
+  "review-invalid": "Check the review action, feedback, or scheduled time.",
+  "review-failed": "The review decision could not be saved. Refresh and try again.",
+  "report-updated": "The content report was updated.",
+  "report-invalid": "Check the report status and notes.",
+  "report-failed": "The report could not be updated. Refresh and try again.",
   "message-updated": "Contact message updated.",
   "message-invalid": "The selected contact message action is invalid.",
   "message-failed": "The contact message could not be changed. Please refresh and try again.",
@@ -61,7 +70,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const showArchivedMessages = inbox === "archived";
   const { data: categoryRows, error: categoriesError } = await supabase
     .from("categories")
-    .select("id, name, slug, created_at, updated_at")
+    .select("id, name, slug, description, content_type, parent_id, sort_order, is_active, created_at, updated_at")
+    .order("sort_order")
     .order("name");
   if (categoriesError) {
     throw new Error(`Unable to load research categories: ${categoriesError.message}`);
@@ -78,6 +88,22 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   if (postsError) {
     throw new Error(`Unable to load research articles: ${postsError.message}`);
+  }
+
+  const { data: reports, error: reportsError } = await supabase.from("content_reports")
+    .select("id, post_title, post_slug, reason, details, status, admin_notes, created_at")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (reportsError) {
+    throw new Error(`Unable to load content reports: ${reportsError.message}`);
+  }
+  const { data: notifications, error: notificationsError } = await supabase.from("author_notifications")
+    .select("id, message, read_at, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (notificationsError) {
+    throw new Error(`Unable to load administrator notifications: ${notificationsError.message}`);
   }
 
   const { data: projects, error: projectsError } = await supabase
@@ -172,23 +198,67 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <div className="section-heading">
           <div>
             <p className="eyebrow">EDITORIAL</p>
-            <h2>Research articles</h2>
+            <h2>Publications</h2>
           </div>
         </div>
         <div className="panel">
-          <h3>Create an article</h3>
+          <h3>Create a publication</h3>
           <p>Only publish factual claims with verifiable sources. Use the separate research fields to label facts, findings, opinions, and proposed solutions.</p>
           <PostForm action={createPost} categories={categories} />
         </div>
+        <div className="section-heading" id="review-queue">
+          <div>
+            <p className="eyebrow">MODERATION</p>
+            <h2>Review queue</h2>
+          </div>
+        </div>
+        <div className="admin-list">
+          {(posts ?? []).filter((post) => post.workflow_status === "pending_review").map((post) => (
+            <details className="panel admin-item" key={`review-${post.id}`}>
+              <summary>
+                <span>{post.title}</span>
+                <span className="muted">{post.content_type} · {post.category} · submitted {post.submitted_at ? new Date(post.submitted_at).toLocaleString() : "recently"}</span>
+              </summary>
+              <p>{post.excerpt}</p>
+              <ReviewControls id={post.id} status={post.workflow_status} />
+            </details>
+          ))}
+          {(posts ?? []).every((post) => post.workflow_status !== "pending_review") && (
+            <div className="empty-research"><p>No submissions are waiting for review.</p></div>
+          )}
+        </div>
+        {(notifications ?? []).length > 0 && (
+          <div className="panel" id="notifications">
+            <h3>Notifications</h3>
+            <ul className="author-notifications">
+              {(notifications ?? []).map((notification) => (
+                <li className={notification.read_at ? "" : "unread"} key={notification.id}>
+                  <div>
+                    <p>{notification.message}</p>
+                    <span className="muted">{new Date(notification.created_at).toLocaleString()}</span>
+                  </div>
+                  {!notification.read_at && (
+                    <form action={markNotificationRead}>
+                      <input type="hidden" name="id" value={notification.id} />
+                      <input type="hidden" name="return_to" value="admin" />
+                      <button className="button button-ghost" type="submit">Mark read</button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="admin-list">
           {(posts ?? []).map((post) => (
             <details className="panel admin-item" key={post.id}>
               <summary>
                 <span>{post.title}</span>
-                <span className="muted">{post.published ? "Published" : "Draft"} · {post.category}</span>
+                <span className="muted">{post.workflow_status} · {post.content_type} · {post.category}</span>
               </summary>
               <PostForm action={updatePost} post={post} categories={categories} />
-              <p className="fine-print">Deleting an article also removes its bookmarks.</p>
+              <ReviewControls id={post.id} status={post.workflow_status} />
+              <p className="fine-print">Deleting a publication also removes its bookmarks.</p>
               <form action={deletePost}>
                 <input type="hidden" name="id" value={post.id} />
                 <button className="button button-ghost" type="submit">Delete article</button>
@@ -214,7 +284,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <div className="panel">
           <h3>Create a category</h3>
           <p>Category renames update associated articles. Categories cannot be deleted while articles still use them.</p>
-          <CategoryForm action={createCategory} />
+          <CategoryForm action={createCategory} categories={categories} />
         </div>
         <div className="admin-list">
           {categories.map((category) => (
@@ -223,7 +293,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 <span>{category.name}</span>
                 <span className="muted">{category.slug}</span>
               </summary>
-              <CategoryForm action={updateCategory} category={category} />
+              <CategoryForm action={updateCategory} category={category} categories={categories} />
               <form action={deleteCategory}>
                 <input type="hidden" name="id" value={category.id} />
                 <button className="button button-ghost" type="submit">Delete category</button>
@@ -235,6 +305,33 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               <h3>No categories yet.</h3>
               <p>Create a category before publishing a research article.</p>
             </div>
+          )}
+        </div>
+      </section>
+
+      <section className="section-inner" id="reports">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">TRUST & SAFETY</p>
+            <h2>Content reports</h2>
+          </div>
+        </div>
+        <div className="admin-list">
+          {(reports ?? []).map((report) => (
+            <article className="panel" key={report.id}>
+              <div className="admin-message-header">
+                <div>
+                  <h3>{report.post_title}</h3>
+                  <p className="muted">/{report.post_slug} · {report.reason.replace(/_/g, " ")} · {report.status}</p>
+                </div>
+                <span className="muted">{new Date(report.created_at).toLocaleString()}</span>
+              </div>
+              {report.details && <p className="admin-message-body">{report.details}</p>}
+              <ReportControls id={report.id} status={report.status} adminNotes={report.admin_notes} />
+            </article>
+          ))}
+          {(reports ?? []).length === 0 && (
+            <div className="empty-research"><p>No content reports have been filed.</p></div>
           )}
         </div>
       </section>
