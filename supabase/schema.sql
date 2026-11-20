@@ -118,6 +118,7 @@ create table if not exists public.posts (
 alter table public.posts enable row level security;
 revoke all on table public.posts from anon, authenticated;
 grant select on table public.posts to anon, authenticated;
+grant insert, update, delete on table public.posts to authenticated;
 
 drop policy if exists "Published posts are viewable by everyone" on public.posts;
 create policy "Published posts are viewable by everyone"

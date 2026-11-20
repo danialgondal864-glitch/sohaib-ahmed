@@ -39,6 +39,7 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - Public project links accept only HTTP/HTTPS URLs; CV project seeds use conflict-safe inserts so existing administrator-managed project rows are not overwritten.
 - Category updates cascade the displayed category name to related posts; a foreign key prevents deleting categories still in use.
 - Contact message workflow fields and delete/update operations are restricted by RLS and server actions that independently verify administrator access.
+- Authenticated post write grants are paired with the existing admin-only RLS policies, enabling the administrator article CRUD forms without granting writes to ordinary users.
 - Supabase SSR and browser clients use the public anon key. The server-only `SUPABASE_SERVICE_ROLE_KEY` is used by the contact API for its restricted RPC and by administrator-only user management after role verification; it is never sent to the browser.
 
 ## Requirements
