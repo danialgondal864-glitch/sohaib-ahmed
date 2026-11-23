@@ -4,6 +4,7 @@ import { parseResearchCategories } from "@/lib/categories";
 import { resolveCoverImageUrl } from "@/lib/author-media";
 import { CONTENT_TYPES } from "@/lib/editorial";
 import { POSTS_PER_PAGE, type PostCardData } from "@/lib/posts";
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/public-env";
 
 type BlogsProps = {
   searchParams: Promise<{
@@ -34,7 +35,7 @@ function normalizeSearch(value: string | string[] | undefined): string {
 export default async function Blogs({ searchParams }: BlogsProps) {
   const params = await searchParams;
   const isConfigured = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    getSupabaseUrl() && getSupabasePublishableKey()
   );
   let posts: PostCardData[] = [];
   let categories: ReturnType<typeof parseResearchCategories> = [];

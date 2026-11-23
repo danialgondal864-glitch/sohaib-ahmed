@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { AUTHOR_MEDIA_BUCKET } from "@/lib/author-media";
 
@@ -140,7 +141,17 @@ export default function AuthorMediaUpload({
           disabled={isUploading}
         />
       </label>
-      {previewUrl && <img className="author-media-preview" src={previewUrl} alt="Uploaded cover preview" />}
+      {previewUrl && (
+        <Image
+          className="author-media-preview"
+          src={previewUrl}
+          alt="Uploaded cover preview"
+          width={720}
+          height={440}
+          loading="lazy"
+          unoptimized
+        />
+      )}
       {path && (
         <p className="fine-print" role="status">
           A private uploaded image is attached. It becomes readable to visitors only while its publication is public.

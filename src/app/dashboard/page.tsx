@@ -3,9 +3,10 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ArticleCard from "@/components/ArticleCard";
 import type { PostCardData } from "@/lib/posts";
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/public-env";
 
 export default async function Dashboard() {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (!getSupabaseUrl() || !getSupabasePublishableKey()) {
     redirect("/login");
   }
 

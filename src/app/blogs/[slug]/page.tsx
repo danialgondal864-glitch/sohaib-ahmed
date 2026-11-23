@@ -7,6 +7,7 @@ import MarkdownContent from "@/components/MarkdownContent";
 import ReportContentForm from "@/app/blogs/ReportContentForm";
 import { createClient } from "@/lib/supabase/server";
 import { resolveCoverImageUrl } from "@/lib/author-media";
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/public-env";
 
 type ResearchSource = {
   title: string;
@@ -104,7 +105,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (!getSupabaseUrl() || !getSupabasePublishableKey()) {
     return {};
   }
   const supabase = await createClient();
@@ -141,7 +142,7 @@ export default async function BlogPost({
   searchParams: Promise<{ report?: string }>;
 }) {
   const [{ slug }, { report }] = await Promise.all([params, searchParams]);
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (!getSupabaseUrl() || !getSupabasePublishableKey()) {
     notFound();
   }
 

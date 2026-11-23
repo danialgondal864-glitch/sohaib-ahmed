@@ -1,3 +1,4 @@
+import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkBreaks from "remark-breaks";
@@ -11,8 +12,18 @@ export default function MarkdownContent({ source }: { source: string }) {
         rehypePlugins={[rehypeHighlight]}
         components={{
           img({ src, alt }) {
-            return src
-              ? <img src={src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" />
+            return typeof src === "string" && src
+              ? (
+                  <Image
+                    src={src}
+                    alt={alt ?? ""}
+                    width={1200}
+                    height={675}
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    unoptimized
+                  />
+                )
               : null;
           }
         }}

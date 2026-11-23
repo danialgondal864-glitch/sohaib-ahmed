@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { AUTHOR_MEDIA_BUCKET } from "@/lib/author-media";
 
 const PUBLIC_BUCKET = "portfolio-public-media";
 const PRIVATE_BUCKET = "portfolio-private-media";
+const CONTRIBUTOR_BUCKET = AUTHOR_MEDIA_BUCKET;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FILE_TYPES: Record<string, string> = {
   "image/avif": "avif",
   "image/gif": "gif",
@@ -15,7 +18,7 @@ const FILE_TYPES: Record<string, string> = {
   "image/webp": "webp"
 };
 
-type MediaBucket = typeof PUBLIC_BUCKET | typeof PRIVATE_BUCKET;
+type MediaBucket = typeof PUBLIC_BUCKET | typeof PRIVATE_BUCKET | typeof CONTRIBUTOR_BUCKET;
 
 type MediaFile = {
   name: string;
@@ -25,13 +28,16 @@ type MediaFile = {
 
 const bucketLabels: Record<MediaBucket, string> = {
   [PUBLIC_BUCKET]: "Public website images",
-  [PRIVATE_BUCKET]: "Private admin files"
+  [PRIVATE_BUCKET]: "Private admin files",
+  [CONTRIBUTOR_BUCKET]: "Contributor uploads"
 };
 
-export default function MediaLibrary() {
+export default function MediaLibrary({ userId }: { userId: string }) {
   const supabase = useMemo(() => createClient(), []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [bucket, setBucket] = useState<MediaBucket>(PUBLIC_BUCKET);
+  const [authorFolders, setAuthorFolders] = useState<string[]>([userId]);
+  const [authorFolder, setAuthorFolder] = useState(userId);
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [privateLinks, setPrivateLinks] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -44,6 +50,44 @@ export default function MediaLibrary() {
     setIsLoading(true);
     setErrorMessage("");
     try {
+      if (bucket === CONTRIBUTOR_BUCKET) {
+        const { data: folderEntries, error: folderError } = await supabase.storage
+          .from(bucket)
+          .list("", { limit: 1000, sortBy: { column: "name", order: "asc" } });
+        if (folderError) {
+          setFiles([]);
+          setErrorMessage(`Unable to load contributor folders: ${folderError.message}`);
+          return;
+        }
+
+        const folders = Array.from(new Set([
+          userId,
+          ...folderEntries
+            .filter((entry) => entry.id === null && UUID_PATTERN.test(entry.name))
+            .map((entry) => entry.name)
+        ]));
+        const selectedFolder = folders.includes(authorFolder) ? authorFolder : folders[0];
+        setAuthorFolders(folders);
+        setAuthorFolder(selectedFolder);
+
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .list(selectedFolder, { limit: 100, sortBy: { column: "created_at", order: "desc" } });
+        if (error) {
+          setFiles([]);
+          setErrorMessage(`Unable to load contributor media: ${error.message}`);
+        } else {
+          setFiles(data
+            .filter((file) => file.id !== null)
+            .map((file) => ({
+              name: `${selectedFolder}/${file.name}`,
+              id: file.id,
+              createdAt: file.created_at
+            })));
+        }
+        return;
+      }
+
       const { data, error } = await supabase.storage
         .from(bucket)
         .list("", { limit: 100, sortBy: { column: "created_at", order: "desc" } });
@@ -67,7 +111,7 @@ export default function MediaLibrary() {
     } finally {
       setIsLoading(false);
     }
-  }, [bucket, supabase]);
+  }, [authorFolder, bucket, supabase, userId]);
 
   useEffect(() => {
     void loadFiles();
@@ -94,7 +138,8 @@ export default function MediaLibrary() {
     }
 
     setIsUploading(true);
-    const path = `${crypto.randomUUID()}.${extension}`;
+    const filename = `${crypto.randomUUID()}.${extension}`;
+    const path = bucket === CONTRIBUTOR_BUCKET ? `${authorFolder}/${filename}` : filename;
     try {
       const { error } = await supabase.storage.from(bucket).upload(path, file, {
         cacheControl: "3600",
@@ -127,6 +172,21 @@ export default function MediaLibrary() {
     setErrorMessage("");
     setStatusMessage("");
     try {
+      if (bucket === CONTRIBUTOR_BUCKET) {
+        const { data: references, error: referenceError } = await supabase.from("posts")
+          .select("id")
+          .eq("cover_image_path", file.name)
+          .limit(1);
+        if (referenceError) {
+          setErrorMessage(`Unable to verify whether this cover is in use: ${referenceError.message}`);
+          return;
+        }
+        if (references && references.length > 0) {
+          setErrorMessage("This file is still referenced by a publication. Detach it before deleting the media.");
+          return;
+        }
+      }
+
       const { error } = await supabase.storage.from(bucket).remove([file.name]);
       if (error) {
         setErrorMessage(`Unable to delete image: ${error.message}`);
@@ -155,7 +215,7 @@ export default function MediaLibrary() {
     setErrorMessage("");
     try {
       const { data, error } = await supabase.storage
-        .from(PRIVATE_BUCKET)
+        .from(bucket)
         .createSignedUrl(file.name, 60);
       if (error) {
         setErrorMessage(`Unable to create a private download link: ${error.message}`);
@@ -174,10 +234,13 @@ export default function MediaLibrary() {
   }
 
   function changeBucket(value: string) {
-    if (value !== PUBLIC_BUCKET && value !== PRIVATE_BUCKET) {
+    if (value !== PUBLIC_BUCKET && value !== PRIVATE_BUCKET && value !== CONTRIBUTOR_BUCKET) {
       return;
     }
     setBucket(value);
+    if (value === CONTRIBUTOR_BUCKET) {
+      setAuthorFolder(userId);
+    }
     setFiles([]);
     setPrivateLinks({});
     setStatusMessage("");
@@ -195,15 +258,33 @@ export default function MediaLibrary() {
           >
             <option value={PUBLIC_BUCKET}>Public website images</option>
             <option value={PRIVATE_BUCKET}>Private admin files</option>
+            <option value={CONTRIBUTOR_BUCKET}>Contributor uploads</option>
           </select>
         </label>
+        {bucket === CONTRIBUTOR_BUCKET && (
+          <label>
+            Contributor folder
+            <select
+              value={authorFolder}
+              onChange={(event) => setAuthorFolder(event.target.value)}
+              disabled={isLoading || isUploading || busyFile !== null}
+            >
+              {authorFolders.map((folder) => (
+                <option key={folder} value={folder}>
+                  {folder === userId ? `${folder} (your account)` : folder}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button className="button button-ghost" type="button" onClick={() => void loadFiles()} disabled={isLoading}>
           Refresh
         </button>
       </div>
       <p className="fine-print">
-        Public images can be opened by anyone with their URL. Private files are restricted to administrators;
-        temporary download links expire after one minute.
+        {bucket === CONTRIBUTOR_BUCKET
+          ? "Contributor uploads are private. Authors and administrators can access them; files referenced by any publication cannot be deleted."
+          : "Public images can be opened by anyone with their URL. Private files are restricted to administrators; temporary download links expire after one minute."}
       </p>
       <form className="admin-media-upload" onSubmit={uploadFile}>
         <label>
@@ -275,7 +356,9 @@ export default function MediaLibrary() {
               );
             })}
           </ul>
-          <p className="fine-print">Showing up to 100 newest images in {bucketLabels[bucket].toLowerCase()}.</p>
+          <p className="fine-print">
+            Showing up to 100 newest images{bucket === CONTRIBUTOR_BUCKET ? ` in contributor folder ${authorFolder}` : ""}.
+          </p>
         </>
       ) : (
         <div className="empty-research">

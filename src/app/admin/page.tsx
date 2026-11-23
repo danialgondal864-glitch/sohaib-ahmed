@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { createPost, deletePost, updatePost } from "@/app/admin/actions";
 import { createProject, deleteProject, updateProject } from "@/app/admin/project-actions";
 import { updateUserRole } from "@/app/admin/user-actions";
@@ -230,7 +231,15 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </summary>
               <p>{post.excerpt}</p>
               {post.coverPreviewUrl && (
-                <img className="review-cover-preview" src={post.coverPreviewUrl} alt="Submitted cover image" />
+                <Image
+                  className="review-cover-preview"
+                  src={post.coverPreviewUrl}
+                  alt="Submitted cover image"
+                  width={960}
+                  height={540}
+                  loading="lazy"
+                  unoptimized
+                />
               )}
               <ReviewControls id={post.id} status={post.workflow_status} />
             </details>
@@ -503,7 +512,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <h2>Media library</h2>
           </div>
         </div>
-        <MediaLibrary />
+        <MediaLibrary userId={user.id} />
       </section>
 
       <section className="section-inner" id="settings">

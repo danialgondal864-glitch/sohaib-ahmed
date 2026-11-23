@@ -6,6 +6,7 @@ import PublicationPagination from "@/components/PublicationPagination";
 import { createClient } from "@/lib/supabase/server";
 import { resolveCoverImageUrl } from "@/lib/author-media";
 import { POSTS_PER_PAGE, type PostCardData } from "@/lib/posts";
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/public-env";
 
 type AuthorPageProps = {
   params: Promise<{ slug: string }>;
@@ -18,7 +19,7 @@ function parsePage(value: string | string[] | undefined): number {
 }
 
 async function getAuthor(slug: string) {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if (!getSupabaseUrl() || !getSupabasePublishableKey()) {
     return null;
   }
   const supabase = await createClient();

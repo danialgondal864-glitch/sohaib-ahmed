@@ -30,8 +30,8 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - **Phase 10 — CV refresh:** added the SparkSolution internship, updated skills and career objective, added the CV-listed projects and public links, and refreshed LinkedIn/GitHub/X links. Migration `20261127_cv_projects_and_links.sql` is applied.
 - **Phase 11 — Admin categories:** category CRUD with public category browsing, post reassignment on rename, and deletion protection while articles reference a category.
 - **Phase 12 — Contact inbox workflow:** read/unread, archive/restore, delete, and new/in-progress/resolved statuses, protected by administrator-only policies.
-- **Phase 13 — Multi-author publishing (implemented in source, not production-verified):** author drafts and submissions, server/database-enforced ownership and review transitions, administrator review decisions, feedback/audit history, in-app and email notifications, private contributor cover-image uploads, article/video/podcast metadata, public author profiles, category hierarchy, tags, Markdown editing, reports, paginated publication grids, SEO metadata, sitemap, and scheduled publication endpoint.
-- **Remaining:** apply and verify `20261202_multi_author_publishing.sql` in Supabase; test regular-user/admin/unauthenticated RLS behavior, private media access, email delivery, and all review/report flows; configure `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, and a compatible Vercel Cron plan; complete production smoke tests and deployment. Video and podcast media remain externally hosted; only cover images are uploaded by contributors.
+- **Phase 13 — Multi-author publishing (implemented in source; production verification pending):** author drafts and submissions, server/database-enforced ownership and review transitions, administrator review decisions, feedback/audit history, in-app and email notifications, private contributor cover-image uploads, article/video/podcast metadata, public author profiles, category hierarchy, tags, Markdown editing, reports, paginated publication grids, SEO metadata, sitemap, and scheduled publication endpoint. The migration was applied through the Supabase Dashboard, and read-only checks confirmed the feature schema objects and policies are present.
+- **Remaining:** test author/admin/unauthenticated RLS behavior, private media access, email delivery, and all review/report flows in a separate test environment; verify `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, and a compatible Vercel Cron plan; complete production smoke tests after deployment. Do not use the local production Supabase configuration for write tests. Video and podcast media remain externally hosted; only cover images are uploaded by contributors.
 
 ### Architecture decisions
 
@@ -54,7 +54,7 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 - Public publication and author pages query 12 rows at a time from Supabase, with server-side search, category/type filters, total counts, and page navigation.
 - Contact message workflow fields and delete/update operations are restricted by RLS and server actions that independently verify administrator access.
 - Authenticated post write grants are paired with the existing admin-only RLS policies, enabling the administrator article CRUD forms without granting writes to ordinary users.
-- Supabase SSR and browser clients use the public anon key. The server-only `SUPABASE_SERVICE_ROLE_KEY` is used by the contact API for its restricted RPC and by administrator-only user management after role verification; it is never sent to the browser.
+- Supabase SSR and browser clients use `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` is accepted as a compatibility alias). Server-only privileged operations use `SUPABASE_SECRET_KEY` (legacy `SUPABASE_SERVICE_ROLE_KEY` is accepted as a compatibility alias); secret keys are never sent to the browser.
 
 ## Requirements
 - Node.js 20.9+
@@ -66,7 +66,7 @@ A Next.js App Router portfolio starter for Sohaib Ahmed, styled as a premium dar
 npm install
 cp .env.example .env.local
 ```
-Set the Supabase project URL and anon/public key in `.env.local`, then:
+Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local`. Set `SUPABASE_SECRET_KEY` only when server-side privileged operations are needed, then:
 ```bash
 npm run dev
 ```
@@ -75,8 +75,8 @@ Open http://localhost:3000.
 ## Supabase setup
 1. Create a Supabase project.
 2. Run `supabase/migrations/20261116_initial_platform.sql` for a new project, followed by all remaining migrations in ascending version order. Apply pending migrations to an existing project in version order.
-3. Copy Project URL and publishable key from Project Settings → API, and set `SUPABASE_SERVICE_ROLE_KEY` from the same project for server-only privileged operations.
-4. Add the values to `.env.local`. Keep the service-role key private; never prefix it with `NEXT_PUBLIC_` or expose it in browser code.
+3. Copy the Project URL and publishable key from Project Settings → API to `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Set `SUPABASE_SECRET_KEY` from the same project only for server-side privileged operations.
+4. Add the values to `.env.local`. Keep `SUPABASE_SECRET_KEY` server-only; never prefix it with `NEXT_PUBLIC_` or expose it in browser code.
 5. In Authentication → URL Configuration, set the Site URL to your production origin, for example `https://sohaib-ahmed-five.vercel.app`.
 6. Add `https://sohaib-ahmed-five.vercel.app/auth/callback` and (for local development) `http://localhost:3000/auth/callback` to the allowed redirect URLs. Add the matching callback URL for any custom domain or Vercel preview environment you use.
 7. Configure email confirmation and the Supabase confirmation/reset email templates. The confirmation link must return to the `emailRedirectTo` URL supplied by the app.
@@ -107,7 +107,7 @@ For administrator-managed content, use the `/admin` editor. Set:
 - `author_id` = the authenticated author's user UUID
 
 Only publish factual research claims when their source links can be verified. Authors can edit drafts, requested changes, and declined submissions; database rules prevent them from publishing or editing content after submission. Bookmark rows remain private to the owning user.
-Never expose a Supabase service-role key in browser code.
+Never expose `SUPABASE_SECRET_KEY` or the legacy service-role key in browser code.
 
 ## Project publishing
 Projects are managed in the administrator dashboard and are visible publicly only after publication. Public visitors can read published projects; create, update, and delete require an administrator session and matching database RLS policies. When no project is published or the project migration is not yet installed, the Projects page displays the CV-backed Bus Tracking System content from `src/lib/data.ts`.
@@ -115,19 +115,29 @@ Projects are managed in the administrator dashboard and are visible publicly onl
 ## Deploy to Vercel
 1. Push this folder to a GitHub repository.
 2. In Vercel, import the repository.
-3. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL`, a high-entropy `CRON_SECRET`, `RESEND_API_KEY`, and `EMAIL_FROM` as Environment Variables. Keep the Supabase secret key and Resend API key private and server-only; use a sender address verified by Resend.
+3. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_SITE_URL`, a high-entropy `CRON_SECRET`, `RESEND_API_KEY`, and `EMAIL_FROM` as Environment Variables. Keep the Supabase secret key and Resend API key private and server-only; use a sender address verified by Resend.
 4. Deploy.
 5. Add the Vercel production URL to Supabase Authentication → URL Configuration and allowed redirect URLs.
 6. Redeploy after changing environment variables.
 7. The scheduled publication cron in `vercel.json` runs daily at 00:00 UTC for the confirmed Hobby plan. Vercel Hobby has per-hour timing precision, so scheduled content may publish on the next daily run—up to about 24 hours after its selected time. Upgrade to Pro/Enterprise and change the schedule to a minute-level cadence if closer timing is required. See [Vercel Cron limits](https://vercel.com/docs/schedules/cron-jobs/usage-and-pricing).
 
+## Staging verification
+- `.env.staging.example` is a placeholder-only checklist using `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `CRON_SECRET`. Use a separate Supabase staging project, staging Vercel project, test email sender, and test author/admin accounts; never copy values from production `.env.local`.
+- Run staging with `npm run dev:staging`, build with `npm run build:staging`, and serve the staging build with `npm run start:staging`. The launcher loads values only from `.env.staging.local`, masks names found in production `.env.local` to prevent fallback, requires the `sb_publishable_` and `sb_secret_` prefixes, refuses any project other than staging project `hxlxqyukgngejkbysztz`, and does not print secret values. Do not use the unwrapped `npm start` for a staging build.
+- Keep real staging values in ignored local configuration or the staging Vercel project's environment settings. Confirm `NEXT_PUBLIC_SUPABASE_URL` targets the staging project before any write test.
+- Apply migrations to the staging database only. In particular, `20261203_contributor_media_cleanup.sql` is a new migration and has not been applied to production.
+- Verify author registration/profile creation, draft and pending-review submissions (article/video/podcast), notification behavior, admin approval/rejection/changes requested, scheduled publishing, author ownership restrictions, and author/admin media upload/delete behavior.
+- Confirm authors cannot delete another author's media or any media referenced by a publication; confirm admins can manage contributor media and referenced files remain undeletable until detached.
+- Verify RLS using authenticated author and administrator sessions, including direct Storage/PostgREST requests. Record results before considering a production migration or deployment.
+- Required production Vercel variables: `CRON_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `NEXT_PUBLIC_SITE_URL`. Their configured status must be checked in Vercel without copying values into source or chat.
+
 ## Before production
 - Replace or confirm the public phone/location details in `src/lib/data.ts`.
 - Add verified LinkedIn and GitHub profile URLs when supplied.
 - Add a real CV PDF download only after confirming which CV file should be publicly downloadable.
-- The contact form stores submissions only after the contact migration and private service-role key are configured; until then, visitors can use the direct email link.
+- The contact form stores submissions only after the contact migration and server-only Supabase secret key are configured; until then, visitors can use the direct email link.
 - Configure and verify the first administrator role before publishing content.
-- Apply all migrations through `20261202_multi_author_publishing.sql` before deploying this version; the new routes expect those columns, tables, policies, and functions.
+- Apply all migrations through `20261202_multi_author_publishing.sql` before deploying the existing publishing feature; the new routes expect those columns, tables, policies, and functions. Apply `20261203_contributor_media_cleanup.sql` only after staging verification and explicit approval.
 - Add `CRON_SECRET` to Vercel before enabling scheduled publication. Test the endpoint with a valid and invalid bearer token.
 - Test author submission and direct PostgREST write attempts with a normal account, then review and publish with an administrator. A successful UI flow alone is not a substitute for RLS verification.
 - Test author cover-image upload/read isolation using regular and administrator accounts. Verify anonymous signed links work only for published posts and fail for drafts/unpublished content.

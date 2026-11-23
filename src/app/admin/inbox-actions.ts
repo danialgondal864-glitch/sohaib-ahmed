@@ -10,7 +10,7 @@ type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 type MessageOperation = "read" | "unread" | "archive" | "unarchive" | "status" | "delete";
 
 function isMessageStatus(value: string | null): value is MessageStatus {
-  return value === "new" || value === "in_progress" || value === "resolved";
+  return MESSAGE_STATUSES.some((status) => status === value);
 }
 
 function isMessageOperation(value: string | null): value is MessageOperation {

@@ -5,8 +5,18 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/user";
 import { parseEditorialForm } from "@/lib/editorial";
 import { notifyAdministratorsOfSubmission } from "@/lib/email";
+import { AUTHOR_MEDIA_BUCKET } from "@/lib/author-media";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const AUTHOR_MEDIA_FILENAME_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(avif|gif|jpg|png|webp)$/i;
+
+function isOwnAuthorMediaPath(path: string, userId: string): boolean {
+  const [ownerId, filename, ...remainingParts] = path.split("/");
+  return ownerId === userId
+    && remainingParts.length === 0
+    && AUTHOR_MEDIA_FILENAME_PATTERN.test(filename ?? "");
+}
 
 function getText(formData: FormData, key: string, maxLength: number): string | null {
   const value = formData.get(key);
@@ -165,15 +175,62 @@ export async function deleteSubmission(formData: FormData) {
     .delete()
     .eq("id", id)
     .eq("author_id", user.id)
-    .select("slug")
+    .select("slug, cover_image_path")
     .maybeSingle();
   if (error || !data) {
     console.error("Unable to delete author submission.", error?.code ?? "not_found");
     redirect("/author?status=save-failed#submissions");
   }
 
+  let mediaRetained = false;
+  if (data.cover_image_path) {
+    if (!isOwnAuthorMediaPath(data.cover_image_path, user.id)) {
+      console.error("Submission cover path did not match its author.", id);
+      mediaRetained = true;
+    } else {
+      const { error: mediaError } = await supabase.storage
+        .from(AUTHOR_MEDIA_BUCKET)
+        .remove([data.cover_image_path]);
+      if (mediaError) {
+        console.error("Unable to clean up submission media.", mediaError.statusCode ?? "storage_error");
+        mediaRetained = true;
+      }
+    }
+  }
+
   revalidateAuthorContent(data.slug);
-  redirect("/author?status=deleted#submissions");
+  redirect(mediaRetained
+    ? "/author?status=deleted-media-retained#submissions"
+    : "/author?status=deleted#submissions");
+}
+
+export async function deleteAuthorMedia(formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const path = getText(formData, "path", 160);
+  if (!path || !isOwnAuthorMediaPath(path, user.id)) {
+    redirect("/author?status=media-delete-failed#media");
+  }
+
+  const { data: references, error: referenceError } = await supabase.from("posts")
+    .select("id")
+    .eq("cover_image_path", path)
+    .limit(1);
+  if (referenceError) {
+    console.error("Unable to check author media references.", referenceError.code);
+    redirect("/author?status=media-delete-failed#media");
+  }
+  if (references && references.length > 0) {
+    redirect("/author?status=media-in-use#media");
+  }
+
+  const { error } = await supabase.storage.from(AUTHOR_MEDIA_BUCKET).remove([path]);
+  if (error) {
+    console.error("Unable to delete author media.", error.statusCode ?? "storage_error");
+    redirect("/author?status=media-delete-failed#media");
+  }
+
+  revalidatePath("/author");
+  redirect("/author?status=media-deleted#media");
 }
 
 export async function markNotificationRead(formData: FormData) {

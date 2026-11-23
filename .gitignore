@@ -4,5 +4,9 @@ out
 .vercel
 .env*
 !.env.example
+!.env.staging.example
 *.tsbuildinfo
 .DS_Store
+supabase/.temp/
+
+.env.staging.local

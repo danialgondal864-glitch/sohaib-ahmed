@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { saveSubmission, deleteSubmission, markNotificationRead, updateAuthorProfile } from "@/app/author/actions";
 import PostForm from "@/app/admin/PostForm";
+import AuthorMediaLibrary from "@/components/AuthorMediaLibrary";
 import { parseResearchCategories } from "@/lib/categories";
 import { requireUser } from "@/lib/auth/user";
 
@@ -14,6 +15,10 @@ const statusMessages: Record<string, string> = {
   "submitted-email-failed": "Your publication was submitted, but its email notification could not be delivered. Administrators can still see the in-app notification.",
   "draft-saved": "Your draft was saved.",
   deleted: "Your draft was deleted.",
+  "deleted-media-retained": "Your submission was deleted, but its cover image was retained because another publication may still use it or storage cleanup failed. You can review it in Uploaded media.",
+  "media-deleted": "The unused uploaded file was deleted.",
+  "media-in-use": "This file is still attached to a publication and cannot be deleted.",
+  "media-delete-failed": "The file could not be deleted. It may still be in use; refresh and try again.",
   "profile-saved": "Your author profile was saved.",
   invalid: "Check the publication fields, category, links, and sources, then try again.",
   "save-failed": "The change could not be saved. Refresh the page and try again.",
@@ -192,6 +197,8 @@ export default async function AuthorPage({ searchParams }: AuthorPageProps) {
           <div className="empty-research"><p>No notifications yet.</p></div>
         )}
       </section>
+
+      <AuthorMediaLibrary userId={user.id} />
 
       <section className="section-inner" id="profile">
         <div className="section-heading">

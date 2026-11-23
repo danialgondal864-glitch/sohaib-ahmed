@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/public-env";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
       : "/dashboard";
 
   if (code) {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    if (!getSupabaseUrl() || !getSupabasePublishableKey()) {
       return NextResponse.redirect(new URL("/login?error=auth-callback", request.url));
     }
 

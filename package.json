@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:staging": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-staging.ps1",
+    "build:staging": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-staging.ps1 -Action build",
+    "start:staging": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-staging.ps1 -Action start",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
@@ -24,6 +27,8 @@
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.29",
     "typescript": "^5.7.3"
   },
   "overrides": {
