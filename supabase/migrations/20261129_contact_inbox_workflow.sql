@@ -3,9 +3,20 @@ alter table public.contact_messages
   add column if not exists archived_at timestamptz,
   add column if not exists status text not null default 'new';
 
-alter table public.contact_messages
-  add constraint contact_messages_status_check
-  check (status in ('new', 'in_progress', 'resolved'));
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint
+    where conrelid = 'public.contact_messages'::regclass
+      and conname = 'contact_messages_status_check'
+  ) then
+    alter table public.contact_messages
+      add constraint contact_messages_status_check
+      check (status in ('new', 'in_progress', 'resolved'));
+  end if;
+end;
+$$;
 
 alter table public.contact_messages
   add column if not exists updated_at timestamptz not null default now();
