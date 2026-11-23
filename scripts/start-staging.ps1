@@ -10,13 +10,6 @@ if (-not (Test-Path -LiteralPath $envFile)) {
     throw "Missing .env.staging.local staging configuration."
 }
 
-$values = @{}
-Get-Content -LiteralPath $envFile | ForEach-Object {
-    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$' -and $_ -notmatch '^\s*#') {
-        $values[$matches[1]] = $matches[2].Trim().Trim('"').Trim("'")
-    }
-}
-
 $requiredNames = @(
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
@@ -24,6 +17,25 @@ $requiredNames = @(
     "NEXT_PUBLIC_SITE_URL",
     "CRON_SECRET"
 )
+$optionalNames = @(
+    "RESEND_API_KEY",
+    "EMAIL_FROM"
+)
+$stagingNames = @($requiredNames + $optionalNames)
+$isolatedNames = @($stagingNames + @(
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY"
+))
+
+$values = @{}
+Get-Content -LiteralPath $envFile | ForEach-Object {
+    if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$' -and $_ -notmatch '^\s*#') {
+        $name = $matches[1]
+        if ($name -in $stagingNames) {
+            $values[$name] = $matches[2].Trim().Trim('"').Trim("'")
+        }
+    }
+}
 
 foreach ($name in $requiredNames) {
     if (-not $values.ContainsKey($name) -or [string]::IsNullOrWhiteSpace($values[$name])) {
@@ -58,49 +70,23 @@ if (-not $values["SUPABASE_SECRET_KEY"].StartsWith("sb_secret_")) {
     throw "Refusing to start staging: SUPABASE_SECRET_KEY must use the sb_secret_ prefix."
 }
 
-$isolatedNames = @(
-    "NEXT_PUBLIC_SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "SUPABASE_SECRET_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "NEXT_PUBLIC_SITE_URL",
-    "CRON_SECRET",
-    "RESEND_API_KEY",
-    "EMAIL_FROM"
-)
-
-foreach ($name in $isolatedNames) {
-    Set-Item -Path "Env:$name" -Value ""
+if ([System.Text.Encoding]::UTF8.GetByteCount($values["CRON_SECRET"]) -lt 32) {
+    throw "Refusing to start staging: CRON_SECRET must be at least 32 bytes."
 }
 
-$productionEnvFile = Join-Path $PSScriptRoot "..\.env.local"
-$systemEnvNames = @(
-    "PATH",
-    "PATHEXT",
-    "PSMODULEPATH",
-    "COMSPEC",
-    "SYSTEMROOT",
-    "WINDIR",
-    "TEMP",
-    "TMP",
-    "USERPROFILE",
-    "HOMEDRIVE",
-    "HOMEPATH",
-    "USERNAME",
-    "USERDOMAIN",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "PROGRAMFILES",
-    "PROGRAMFILES(X86)",
-    "PROGRAMDATA"
-)
-if (Test-Path -LiteralPath $productionEnvFile) {
-    Get-Content -LiteralPath $productionEnvFile | ForEach-Object {
-        if ($_ -match '^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=' -and $matches[1] -notin $systemEnvNames) {
-            Set-Item -Path "Env:$($matches[1])" -Value ""
-        }
+try {
+    $siteUrl = [Uri]$values["NEXT_PUBLIC_SITE_URL"]
+    $isLocalhost = $siteUrl.Host -eq "localhost" -and $siteUrl.Scheme -in @("http", "https")
+    if (-not $siteUrl.IsAbsoluteUri -or
+        ($siteUrl.Scheme -ne "https" -and -not $isLocalhost) -or
+        $siteUrl.UserInfo) {
+        throw "NEXT_PUBLIC_SITE_URL must be an HTTPS or localhost URL."
     }
+} catch {
+    if ($_.Exception.Message -like "NEXT_PUBLIC_SITE_URL must be*") {
+        throw
+    }
+    throw "NEXT_PUBLIC_SITE_URL must be an HTTPS or localhost URL."
 }
 
 foreach ($name in $isolatedNames) {
@@ -117,7 +103,7 @@ foreach ($name in @(
     Set-Item -Path "Env:$name" -Value $values[$name]
 }
 
-foreach ($name in @("RESEND_API_KEY", "EMAIL_FROM")) {
+foreach ($name in $optionalNames) {
     if ($values.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace($values[$name])) {
         Set-Item -Path "Env:$name" -Value $values[$name]
     } else {
