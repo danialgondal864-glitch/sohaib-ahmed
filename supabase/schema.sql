@@ -29,6 +29,10 @@ declare
   current_role text;
   admin_count integer;
 begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception using errcode = '42501', message = 'Administrator role changes require a trusted service-role request.';
+  end if;
+
   perform pg_catalog.pg_advisory_xact_lock(739281642117);
 
   select profiles.role into current_role
@@ -579,10 +583,262 @@ create table if not exists public.categories (
   updated_at timestamptz not null default now()
 );
 
-with category_names as (
-  select distinct btrim(category) as name
+do $$
+declare
+  blank_category_count bigint;
+begin
+  select count(*) into blank_category_count
   from public.posts
-  where btrim(category) <> ''
+  where category is null
+     or regexp_replace(category, '[[:space:]]', '', 'g') = '';
+
+  if blank_category_count > 0 then
+    raise exception using
+      errcode = '23514',
+      message = 'Category migration requires manual review.',
+      detail = format('%s post(s) have NULL, blank, or whitespace-only categories.', blank_category_count);
+  end if;
+end;
+$$;
+
+do $$
+declare
+  invalid_category_detail text;
+begin
+  with candidate_names as (
+    select 'post category'::text as source, category as original_name
+    from public.posts
+    union all
+    select 'existing category', name
+    from public.categories
+    union all
+    select 'seed category', name
+    from (values
+      ('AI & Emerging Technologies'),
+      ('Latest AI Tools'),
+      ('Research & Analysis'),
+      ('Problem Solving'),
+      ('Cloud & DevOps'),
+      ('Future Technologies')
+    ) as defaults(name)
+  ),
+  normalized_names as (
+    select
+      source,
+      original_name,
+      regexp_replace(original_name, '^[[:space:]]+|[[:space:]]+$', '', 'g') as normalized_name
+    from candidate_names
+  ),
+  proposed_slugs as (
+    select
+      source,
+      original_name,
+      normalized_name,
+      nullif(trim(both '-' from regexp_replace(lower(normalized_name), '[^a-z0-9]+', '-', 'g')), '') as slug
+    from normalized_names
+  )
+  select format(
+    'Source=%s; value=%L; normalized=%L; slug=%L. Existing category names must not be padded, and every category must produce a valid slug.',
+    source,
+    original_name,
+    normalized_name,
+    slug
+  )
+  into invalid_category_detail
+  from proposed_slugs
+  where original_name is null
+     or normalized_name = ''
+     or (source = 'existing category' and original_name is distinct from normalized_name)
+     or slug is null
+     or slug !~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+  limit 1;
+
+  if invalid_category_detail is not null then
+    raise exception using
+      errcode = '23514',
+      message = 'Category migration found an invalid category name.',
+      detail = invalid_category_detail;
+  end if;
+end;
+$$;
+
+do $$
+declare
+  duplicate_normalized_name_count bigint;
+begin
+  select count(*) into duplicate_normalized_name_count
+  from (
+    select normalized_name
+    from (
+      select regexp_replace(name, '^[[:space:]]+|[[:space:]]+$', '', 'g') as normalized_name
+      from public.categories
+    ) normalized_categories
+    group by normalized_name
+    having count(*) > 1
+  ) duplicates;
+
+  if duplicate_normalized_name_count > 0 then
+    raise exception using
+      errcode = '23505',
+      message = 'Category migration requires manual review.',
+      detail = 'Multiple category names would normalize to the same name.';
+  end if;
+end;
+$$;
+
+do $$
+declare
+  duplicate_existing_slug_count bigint;
+begin
+  select count(*) into duplicate_existing_slug_count
+  from (
+    select slug
+    from public.categories
+    group by slug
+    having count(*) > 1
+  ) duplicates;
+
+  if duplicate_existing_slug_count > 0 then
+    raise exception using
+      errcode = '23505',
+      message = 'Category migration found duplicate existing category slugs.',
+      detail = 'Existing category records do not have unique slugs.';
+  end if;
+end;
+$$;
+
+do $$
+declare
+  proposed_slug_collision text;
+begin
+  select format(
+    'Slug "%s" is produced by distinct category names "%s" and "%s".',
+    proposed.slug,
+    min(proposed.name),
+    max(proposed.name)
+  )
+  into proposed_slug_collision
+  from (
+    select distinct candidates.name, candidates.slug
+    from (
+      select
+        regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g') as name,
+        left(
+          nullif(trim(both '-' from regexp_replace(lower(regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g')), '[^a-z0-9]+', '-', 'g')), ''),
+          70
+        ) as slug
+      from public.posts
+      union all
+      select
+        name,
+        left(
+          nullif(trim(both '-' from regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g')), ''),
+          70
+        )
+      from (values
+        ('AI & Emerging Technologies'),
+        ('Latest AI Tools'),
+        ('Research & Analysis'),
+        ('Problem Solving'),
+        ('Cloud & DevOps'),
+        ('Future Technologies')
+      ) as defaults(name)
+    ) candidates
+  ) proposed
+  group by proposed.slug
+  having count(*) > 1
+  limit 1;
+
+  if proposed_slug_collision is not null then
+    raise exception using
+      errcode = '23505',
+      message = 'Category migration found a normalized category slug collision.',
+      detail = proposed_slug_collision;
+  end if;
+end;
+$$;
+
+do $$
+declare
+  existing_slug_collision text;
+begin
+  select format(
+    'Slug "%s" is proposed for "%s" but belongs to existing category "%s".',
+    proposed.proposed_slug,
+    proposed.proposed_name,
+    existing.name
+  )
+  into existing_slug_collision
+  from (
+    select distinct
+      left(
+        nullif(trim(both '-' from regexp_replace(lower(regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g')), '[^a-z0-9]+', '-', 'g')), ''),
+        70
+      ) as proposed_slug,
+      regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g') as proposed_name
+    from public.posts
+    union
+    select
+      left(
+        nullif(trim(both '-' from regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g')), ''),
+        70
+      ),
+      name
+    from (values
+      ('AI & Emerging Technologies'),
+      ('Latest AI Tools'),
+      ('Research & Analysis'),
+      ('Problem Solving'),
+      ('Cloud & DevOps'),
+      ('Future Technologies')
+    ) as defaults(name)
+  ) proposed
+  join public.categories existing
+    on existing.slug = proposed.proposed_slug
+  where regexp_replace(existing.name, '^[[:space:]]+|[[:space:]]+$', '', 'g') is distinct from proposed.proposed_name
+  limit 1;
+
+  if existing_slug_collision is not null then
+    raise exception using
+      errcode = '23505',
+      message = 'Category migration found an existing category slug collision.',
+      detail = existing_slug_collision;
+  end if;
+end;
+$$;
+
+do $$
+declare
+  unrepresentable_category_count bigint;
+begin
+  select count(*) into unrepresentable_category_count
+  from (
+    select distinct
+      regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g') as name,
+      nullif(trim(both '-' from regexp_replace(lower(regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g')), '[^a-z0-9]+', '-', 'g')), '') as slug
+    from public.posts
+  ) proposed
+  where proposed.name is null
+     or proposed.name = ''
+     or proposed.slug is null
+     or proposed.slug not similar to '[a-z0-9]+(-[a-z0-9]+)*';
+
+  if unrepresentable_category_count > 0 then
+    raise exception using
+      errcode = '23514',
+      message = 'Category migration found a category name that cannot produce a valid slug.',
+      detail = 'Normalize or remove invalid category values before migration.';
+  end if;
+end;
+$$;
+
+update public.categories
+set name = regexp_replace(name, '^[[:space:]]+|[[:space:]]+$', '', 'g')
+where name is distinct from regexp_replace(name, '^[[:space:]]+|[[:space:]]+$', '', 'g');
+
+with category_names as (
+  select distinct regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g') as name
+  from public.posts
   union
   select name
   from (values
@@ -597,10 +853,7 @@ with category_names as (
 normalized as (
   select
     name,
-    coalesce(
-      nullif(trim(both '-' from regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g')), ''),
-      'category'
-    ) as base_slug
+    nullif(trim(both '-' from regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g')), '') as base_slug
   from category_names
 ),
 disambiguated as (
@@ -620,13 +873,30 @@ select
 from disambiguated
 on conflict do nothing;
 
-alter table public.posts
-  add constraint posts_category_name_fkey
-  foreign key (category)
-  references public.categories(name)
-  on update cascade
-  on delete restrict;
+update public.posts
+set category = regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g')
+where category is distinct from regexp_replace(category, '^[[:space:]]+|[[:space:]]+$', '', 'g');
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_category_name_fkey'
+  ) then
+    alter table public.posts
+      add constraint posts_category_name_fkey
+      foreign key (category)
+      references public.categories(name)
+      on update cascade
+      on delete restrict
+      not valid;
+  end if;
+end;
+$$;
+
+alter table public.posts validate constraint posts_category_name_fkey;
 create index if not exists posts_category_idx on public.posts (category);
 
 alter table public.categories enable row level security;
@@ -635,9 +905,36 @@ grant select on table public.categories to anon, authenticated;
 grant insert, update, delete on table public.categories to authenticated;
 
 drop policy if exists "Categories are publicly readable" on public.categories;
-create policy "Categories are publicly readable"
-on public.categories for select to anon, authenticated
-using (true);
+do $$
+begin
+  if exists (
+    select 1
+    from pg_catalog.pg_attribute
+    where attrelid = 'public.categories'::regclass
+      and attname = 'is_active'
+      and not attisdropped
+  ) then
+    execute $policy$
+      create policy "Categories are publicly readable"
+      on public.categories for select to anon, authenticated
+      using (
+        is_active
+        or exists (
+          select 1 from public.profiles
+          where profiles.id = auth.uid()
+            and profiles.role = 'admin'
+        )
+      )
+    $policy$;
+  else
+    execute $policy$
+      create policy "Categories are publicly readable"
+      on public.categories for select to anon, authenticated
+      using (true)
+    $policy$;
+  end if;
+end;
+$$;
 
 drop policy if exists "Admins can create categories" on public.categories;
 create policy "Admins can create categories"
@@ -707,9 +1004,20 @@ alter table public.contact_messages
   add column if not exists status text not null default 'new',
   add column if not exists updated_at timestamptz not null default now();
 
-alter table public.contact_messages
-  add constraint contact_messages_status_check
-  check (status in ('new', 'in_progress', 'resolved'));
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint
+    where conrelid = 'public.contact_messages'::regclass
+      and conname = 'contact_messages_status_check'
+  ) then
+    alter table public.contact_messages
+      add constraint contact_messages_status_check
+      check (status in ('new', 'in_progress', 'resolved'));
+  end if;
+end;
+$$;
 
 create index if not exists contact_messages_inbox_order_idx
   on public.contact_messages (archived_at, is_read, created_at desc);
@@ -893,15 +1201,49 @@ alter table public.profiles
   add column if not exists website_url text,
   add column if not exists author_profile_public boolean not null default false;
 
-alter table public.profiles
-  add constraint profiles_author_slug_format_check
-    check (author_slug is null or author_slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
-  add constraint profiles_author_bio_length_check
-    check (bio is null or length(bio) <= 1200),
-  add constraint profiles_author_avatar_url_check
-    check (avatar_url is null or (avatar_url ~* '^https?://' and avatar_url !~ '://[^/]*@')),
-  add constraint profiles_author_website_url_check
-    check (website_url is null or (website_url ~* '^https?://' and website_url !~ '://[^/]*@'));
+do $$
+begin
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_slug_format_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_slug_format_check
+        check (author_slug is null or author_slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$');
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_bio_length_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_bio_length_check
+        check (bio is null or length(bio) <= 1200);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_avatar_url_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_avatar_url_check
+        check (avatar_url is null or (avatar_url ~* '^https?://' and avatar_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_website_url_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_website_url_check
+        check (website_url is null or (website_url ~* '^https?://' and website_url !~ '://[^/]*@'));
+  end if;
+end;
+$$;
 
 create unique index if not exists profiles_author_slug_unique_idx
   on public.profiles (author_slug)
@@ -1011,45 +1353,143 @@ set workflow_status = case when published then 'published' else 'draft' end,
     published_at = case when published then coalesce(published_at, created_at) else published_at end
 where workflow_status = 'draft' and published;
 
-alter table public.posts
-  add constraint posts_content_lengths_check
-    check (
-      length(title) between 1 and 200
-      and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
-      and length(excerpt) between 1 and 500
-      and length(content) <= 50000
-    ) not valid,
-  add constraint posts_research_array_limits_check
-    check (
-      cardinality(verified_facts) <= 50
-      and cardinality(research_findings) <= 50
-      and cardinality(opinions) <= 50
-      and cardinality(proposed_solutions) <= 50
-      and jsonb_array_length(sources) <= 50
-    ) not valid,
-  add constraint posts_read_time_check
-    check (read_time between 1 and 120),
-  add constraint posts_duration_seconds_check
-    check (duration_seconds is null or duration_seconds between 1 and 86400),
-  add constraint posts_tags_count_check
-    check (cardinality(tags) <= 30),
-  add constraint posts_cover_image_url_check
-    check (cover_image_url is null or (cover_image_url ~* '^https?://' and cover_image_url !~ '://[^/]*@')),
-  add constraint posts_cover_image_path_check
-    check (
-      cover_image_path is null
-      or cover_image_path ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.](avif|gif|jpg|png|webp)$'
-    ),
-  add constraint posts_cover_image_source_exclusive_check
-    check (cover_image_path is null or cover_image_url is null),
-  add constraint posts_video_url_check
-    check (video_url is null or (video_url ~* '^https?://' and video_url !~ '://[^/]*@')),
-  add constraint posts_audio_url_check
-    check (audio_url is null or (audio_url ~* '^https?://' and audio_url !~ '://[^/]*@')),
-  add constraint posts_video_published_url_check
-    check (not published or content_type <> 'video' or video_url is not null),
-  add constraint posts_podcast_published_url_check
-    check (not published or content_type <> 'podcast' or audio_url is not null);
+do $$
+begin
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_content_lengths_check'
+  ) then
+    alter table public.posts
+      add constraint posts_content_lengths_check
+        check (
+          length(title) between 1 and 200
+          and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+          and length(excerpt) between 1 and 500
+          and length(content) <= 50000
+        ) not valid;
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_research_array_limits_check'
+  ) then
+    alter table public.posts
+      add constraint posts_research_array_limits_check
+        check (
+          cardinality(verified_facts) <= 50
+          and cardinality(research_findings) <= 50
+          and cardinality(opinions) <= 50
+          and cardinality(proposed_solutions) <= 50
+          and jsonb_array_length(sources) <= 50
+        ) not valid;
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_read_time_check'
+  ) then
+    alter table public.posts
+      add constraint posts_read_time_check
+        check (read_time between 1 and 120);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_duration_seconds_check'
+  ) then
+    alter table public.posts
+      add constraint posts_duration_seconds_check
+        check (duration_seconds is null or duration_seconds between 1 and 86400);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_tags_count_check'
+  ) then
+    alter table public.posts
+      add constraint posts_tags_count_check
+        check (cardinality(tags) <= 30);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_cover_image_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_cover_image_url_check
+        check (cover_image_url is null or (cover_image_url ~* '^https?://' and cover_image_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_cover_image_path_check'
+  ) then
+    alter table public.posts
+      add constraint posts_cover_image_path_check
+        check (
+          cover_image_path is null
+          or cover_image_path ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.](avif|gif|jpg|png|webp)$'
+        );
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_cover_image_source_exclusive_check'
+  ) then
+    alter table public.posts
+      add constraint posts_cover_image_source_exclusive_check
+        check (cover_image_path is null or cover_image_url is null);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_video_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_video_url_check
+        check (video_url is null or (video_url ~* '^https?://' and video_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_audio_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_audio_url_check
+        check (audio_url is null or (audio_url ~* '^https?://' and audio_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_video_published_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_video_published_url_check
+        check (not published or content_type <> 'video' or video_url is not null);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_podcast_published_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_podcast_published_url_check
+        check (not published or content_type <> 'podcast' or audio_url is not null);
+  end if;
+end;
+$$;
 
 create index if not exists posts_workflow_author_idx
   on public.posts (author_id, workflow_status, updated_at desc);
@@ -1712,4 +2152,70 @@ using (
       and posts.workflow_status = 'published'
       and (posts.scheduled_at is null or posts.scheduled_at <= now())
   )
+);
+
+create or replace function public.can_delete_author_submission_media(p_object_name text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  folder_names text[];
+  caller_is_admin boolean;
+begin
+  if auth.uid() is null or p_object_name is null then
+    return false;
+  end if;
+
+  folder_names := storage.foldername(p_object_name);
+  if folder_names is null
+    or array_length(folder_names, 1) <> 1
+    or folder_names[1] is null then
+    return false;
+  end if;
+
+  select exists (
+    select 1
+    from public.profiles
+    where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+  ) into caller_is_admin;
+
+  if not caller_is_admin and folder_names[1] <> auth.uid()::text then
+    return false;
+  end if;
+
+  return not exists (
+    select 1
+    from public.posts
+    where posts.cover_image_path = p_object_name
+  );
+end;
+$$;
+
+revoke all on function public.can_delete_author_submission_media(text) from public, anon;
+grant execute on function public.can_delete_author_submission_media(text) to authenticated;
+
+drop policy if exists "Admins can upload contributor submission covers" on storage.objects;
+create policy "Admins can upload contributor submission covers"
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'author-submission-media'
+  and array_length(storage.foldername(name), 1) = 1
+  and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and exists (
+    select 1
+    from public.profiles
+    where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+  )
+);
+
+drop policy if exists "Authors and admins can delete unused submission covers" on storage.objects;
+create policy "Authors and admins can delete unused submission covers"
+on storage.objects for delete to authenticated
+using (
+  bucket_id = 'author-submission-media'
+  and public.can_delete_author_submission_media(name)
 );

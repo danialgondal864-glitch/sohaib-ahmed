@@ -6,15 +6,49 @@ alter table public.profiles
   add column if not exists website_url text,
   add column if not exists author_profile_public boolean not null default false;
 
-alter table public.profiles
-  add constraint profiles_author_slug_format_check
-    check (author_slug is null or author_slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
-  add constraint profiles_author_bio_length_check
-    check (bio is null or length(bio) <= 1200),
-  add constraint profiles_author_avatar_url_check
-    check (avatar_url is null or (avatar_url ~* '^https?://' and avatar_url !~ '://[^/]*@')),
-  add constraint profiles_author_website_url_check
-    check (website_url is null or (website_url ~* '^https?://' and website_url !~ '://[^/]*@'));
+do $$
+begin
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_slug_format_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_slug_format_check
+        check (author_slug is null or author_slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$');
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_bio_length_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_bio_length_check
+        check (bio is null or length(bio) <= 1200);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_avatar_url_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_avatar_url_check
+        check (avatar_url is null or (avatar_url ~* '^https?://' and avatar_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.profiles'::regclass
+      and conname = 'profiles_author_website_url_check'
+  ) then
+    alter table public.profiles
+      add constraint profiles_author_website_url_check
+        check (website_url is null or (website_url ~* '^https?://' and website_url !~ '://[^/]*@'));
+  end if;
+end;
+$$;
 
 create unique index if not exists profiles_author_slug_unique_idx
   on public.profiles (author_slug)
@@ -124,45 +158,143 @@ set workflow_status = case when published then 'published' else 'draft' end,
     published_at = case when published then coalesce(published_at, created_at) else published_at end
 where workflow_status = 'draft' and published;
 
-alter table public.posts
-  add constraint posts_content_lengths_check
-    check (
-      length(title) between 1 and 200
-      and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
-      and length(excerpt) between 1 and 500
-      and length(content) <= 50000
-    ) not valid,
-  add constraint posts_research_array_limits_check
-    check (
-      cardinality(verified_facts) <= 50
-      and cardinality(research_findings) <= 50
-      and cardinality(opinions) <= 50
-      and cardinality(proposed_solutions) <= 50
-      and jsonb_array_length(sources) <= 50
-    ) not valid,
-  add constraint posts_read_time_check
-    check (read_time between 1 and 120),
-  add constraint posts_duration_seconds_check
-    check (duration_seconds is null or duration_seconds between 1 and 86400),
-  add constraint posts_tags_count_check
-    check (cardinality(tags) <= 30),
-  add constraint posts_cover_image_url_check
-    check (cover_image_url is null or (cover_image_url ~* '^https?://' and cover_image_url !~ '://[^/]*@')),
-  add constraint posts_cover_image_path_check
-    check (
-      cover_image_path is null
-      or cover_image_path ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.](avif|gif|jpg|png|webp)$'
-    ),
-  add constraint posts_cover_image_source_exclusive_check
-    check (cover_image_path is null or cover_image_url is null),
-  add constraint posts_video_url_check
-    check (video_url is null or (video_url ~* '^https?://' and video_url !~ '://[^/]*@')),
-  add constraint posts_audio_url_check
-    check (audio_url is null or (audio_url ~* '^https?://' and audio_url !~ '://[^/]*@')),
-  add constraint posts_video_published_url_check
-    check (not published or content_type <> 'video' or video_url is not null),
-  add constraint posts_podcast_published_url_check
-    check (not published or content_type <> 'podcast' or audio_url is not null);
+do $$
+begin
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_content_lengths_check'
+  ) then
+    alter table public.posts
+      add constraint posts_content_lengths_check
+        check (
+          length(title) between 1 and 200
+          and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'
+          and length(excerpt) between 1 and 500
+          and length(content) <= 50000
+        ) not valid;
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_research_array_limits_check'
+  ) then
+    alter table public.posts
+      add constraint posts_research_array_limits_check
+        check (
+          cardinality(verified_facts) <= 50
+          and cardinality(research_findings) <= 50
+          and cardinality(opinions) <= 50
+          and cardinality(proposed_solutions) <= 50
+          and jsonb_array_length(sources) <= 50
+        ) not valid;
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_read_time_check'
+  ) then
+    alter table public.posts
+      add constraint posts_read_time_check
+        check (read_time between 1 and 120);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_duration_seconds_check'
+  ) then
+    alter table public.posts
+      add constraint posts_duration_seconds_check
+        check (duration_seconds is null or duration_seconds between 1 and 86400);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_tags_count_check'
+  ) then
+    alter table public.posts
+      add constraint posts_tags_count_check
+        check (cardinality(tags) <= 30);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_cover_image_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_cover_image_url_check
+        check (cover_image_url is null or (cover_image_url ~* '^https?://' and cover_image_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_cover_image_path_check'
+  ) then
+    alter table public.posts
+      add constraint posts_cover_image_path_check
+        check (
+          cover_image_path is null
+          or cover_image_path ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.](avif|gif|jpg|png|webp)$'
+        );
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_cover_image_source_exclusive_check'
+  ) then
+    alter table public.posts
+      add constraint posts_cover_image_source_exclusive_check
+        check (cover_image_path is null or cover_image_url is null);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_video_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_video_url_check
+        check (video_url is null or (video_url ~* '^https?://' and video_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_audio_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_audio_url_check
+        check (audio_url is null or (audio_url ~* '^https?://' and audio_url !~ '://[^/]*@'));
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_video_published_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_video_published_url_check
+        check (not published or content_type <> 'video' or video_url is not null);
+  end if;
+
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.posts'::regclass
+      and conname = 'posts_podcast_published_url_check'
+  ) then
+    alter table public.posts
+      add constraint posts_podcast_published_url_check
+        check (not published or content_type <> 'podcast' or audio_url is not null);
+  end if;
+end;
+$$;
 
 create index if not exists posts_workflow_author_idx
   on public.posts (author_id, workflow_status, updated_at desc);
