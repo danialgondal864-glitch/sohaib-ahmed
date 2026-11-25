@@ -167,7 +167,7 @@ export default async function BlogPost({
   const coverImageUrl = await resolveCoverImageUrl(supabase, post.cover_image_url, post.cover_image_path);
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError) {
+  if (authError && authError.message !== "Auth session missing!") {
     throw new Error(`Unable to verify your account: ${authError.message}`);
   }
 
