@@ -1,19 +1,19 @@
 import Link from "next/link";
-import { saveSubmission, deleteSubmission, markNotificationRead, updateAuthorProfile } from "@/app/author/actions";
-import PostForm from "@/app/admin/PostForm";
+import { deleteSubmission, markNotificationRead, updateAuthorProfile } from "@/app/author/actions";
+import AuthorPostForm from "@/components/AuthorPostForm";
 import AuthorMediaLibrary from "@/components/AuthorMediaLibrary";
 import { parseResearchCategories } from "@/lib/categories";
 import { requireUser } from "@/lib/auth/user";
 
 type AuthorPageProps = {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; edit?: string }>;
 };
 
 const statusMessages: Record<string, string> = {
   submitted: "Your publication was submitted for administrator review.",
   "submitted-email-unconfigured": "Your publication was submitted. Email delivery is not configured; administrators can still see the in-app notification.",
   "submitted-email-failed": "Your publication was submitted, but its email notification could not be delivered. Administrators can still see the in-app notification.",
-  "draft-saved": "Your draft was saved.",
+  "draft-saved": "Draft save ho gaya.",
   deleted: "Your draft was deleted.",
   "deleted-media-retained": "Your submission was deleted, but its cover image was retained because another publication may still use it or storage cleanup failed. You can review it in Uploaded media.",
   "media-deleted": "The unused uploaded file was deleted.",
@@ -25,6 +25,12 @@ const statusMessages: Record<string, string> = {
   "profile-invalid": "Check the author profile fields and use valid HTTP(S) links.",
   "profile-slug-taken": "That author profile URL is already in use.",
   "profile-failed": "The author profile could not be saved. Please try again."
+};
+
+const submissionErrorMessages = {
+  invalid: statusMessages.invalid,
+  "slug-taken": "Yeh slug pehle se maujood hai. Doosra slug chunein ya apna purana draft kholein.",
+  "save-failed": statusMessages["save-failed"]
 };
 
 const workflowLabels: Record<string, string> = {
@@ -39,7 +45,7 @@ const workflowLabels: Record<string, string> = {
 
 export default async function AuthorPage({ searchParams }: AuthorPageProps) {
   const { supabase, user } = await requireUser();
-  const { status } = await searchParams;
+  const { status, edit } = await searchParams;
 
   const [{ data: postRows, error: postsError }, { data: categoryRows, error: categoriesError }, { data: profile, error: profileError }, { data: notifications, error: notificationsError }] =
     await Promise.all([
@@ -111,14 +117,14 @@ export default async function AuthorPage({ searchParams }: AuthorPageProps) {
         </div>
         <div className="panel">
           <p>Contributors can submit articles, videos, and podcasts. Submissions stay private until an administrator approves and publishes them. Video and podcast media are linked from an external HTTPS provider in this release.</p>
-          <PostForm action={saveSubmission} categories={categories} isAdmin={false} userId={user.id} />
+          <AuthorPostForm categories={categories} userId={user.id} errorMessages={submissionErrorMessages} />
         </div>
         <div className="admin-list">
           {posts.map((post) => {
             const editable = editableStatuses.has(post.workflow_status);
             const postReviews = (reviews ?? []).filter((review) => review.post_id === post.id);
             return (
-              <details className="panel admin-item" key={post.id}>
+              <details className="panel admin-item" key={post.id} open={edit === post.id}>
                 <summary>
                   <span>{post.title}</span>
                   <span className="muted">
@@ -134,7 +140,7 @@ export default async function AuthorPage({ searchParams }: AuthorPageProps) {
                 )}
                 {editable ? (
                   <>
-                    <PostForm action={saveSubmission} post={post} categories={categories} isAdmin={false} userId={user.id} />
+                    <AuthorPostForm post={post} categories={categories} userId={user.id} errorMessages={submissionErrorMessages} />
                     <form action={deleteSubmission}>
                       <input type="hidden" name="id" value={post.id} />
                       <button className="button button-ghost" type="submit">Delete submission</button>

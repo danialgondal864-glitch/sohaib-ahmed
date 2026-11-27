@@ -6,6 +6,12 @@ import { requireUser } from "@/lib/auth/user";
 import { parseEditorialForm } from "@/lib/editorial";
 import { notifyAdministratorsOfSubmission } from "@/lib/email";
 import { AUTHOR_MEDIA_BUCKET } from "@/lib/author-media";
+import {
+  AUTHOR_SUBMISSION_FIELDS,
+  type AuthorSubmissionState,
+  type AuthorSubmissionStatus,
+  type AuthorSubmissionValues
+} from "@/lib/author-submission-state";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AUTHOR_MEDIA_FILENAME_PATTERN =
@@ -78,11 +84,37 @@ function revalidateAuthorContent(slug?: string) {
   }
 }
 
-export async function saveSubmission(formData: FormData) {
+function getSubmissionValues(formData: FormData): AuthorSubmissionValues {
+  const values: AuthorSubmissionValues = {};
+  for (const field of AUTHOR_SUBMISSION_FIELDS) {
+    const value = formData.get(field);
+    if (typeof value === "string") {
+      values[field] = value;
+    }
+  }
+  return values;
+}
+
+function submissionResult(
+  status: AuthorSubmissionStatus,
+  previousState: AuthorSubmissionState,
+  formData: FormData
+): AuthorSubmissionState {
+  return {
+    status,
+    values: getSubmissionValues(formData),
+    revision: previousState.revision + 1
+  };
+}
+
+export async function saveSubmission(
+  previousState: AuthorSubmissionState,
+  formData: FormData
+): Promise<AuthorSubmissionState> {
   const { supabase, user } = await requireUser();
   const id = getText(formData, "id", 36);
   if (id && !UUID_PATTERN.test(id)) {
-    redirect("/author?status=invalid#submissions");
+    return submissionResult("invalid", previousState, formData);
   }
 
   const { data: categoryRows, error: categoryError } = await supabase
@@ -91,7 +123,7 @@ export async function saveSubmission(formData: FormData) {
     .eq("is_active", true);
   if (categoryError) {
     console.error("Unable to load categories for an author submission.", categoryError.code);
-    redirect("/author?status=save-failed#submissions");
+    return submissionResult("save-failed", previousState, formData);
   }
 
   const categories = categoryRows ?? [];
@@ -101,13 +133,13 @@ export async function saveSubmission(formData: FormData) {
     false
   );
   if (!editorial) {
-    redirect("/author?status=invalid#submissions");
+    return submissionResult("invalid", previousState, formData);
   }
   if (
     editorial.cover_image_path &&
     !editorial.cover_image_path.startsWith(`${user.id}/`)
   ) {
-    redirect("/author?status=invalid#submissions");
+    return submissionResult("invalid", previousState, formData);
   }
 
   const matchingCategory = categories.find((category) => category.name === editorial.category);
@@ -120,7 +152,7 @@ export async function saveSubmission(formData: FormData) {
     (editorial.subcategory_id !== null &&
       (!matchingSubcategory || matchingSubcategory.parent_id !== matchingCategory.id))
   ) {
-    redirect("/author?status=invalid#submissions");
+    return submissionResult("invalid", previousState, formData);
   }
 
   const status = formData.get("intent") === "submit" ? "pending_review" : "draft";
@@ -136,16 +168,22 @@ export async function saveSubmission(formData: FormData) {
         .update(payload)
         .eq("id", id)
         .eq("author_id", user.id)
-        .select("slug")
+        .select("id, slug")
         .maybeSingle()
     : await supabase.from("posts")
         .insert({ ...payload, author_id: user.id })
-        .select("slug")
+        .select("id, slug")
         .single();
 
   if (error || !data) {
-    console.error("Unable to save author submission.", error?.code ?? "not_found");
-    redirect("/author?status=save-failed#submissions");
+    const constraint = error?.code === "23505"
+      ? error.message.match(/unique constraint "([^"]+)"/i)?.[1] ?? "unknown_unique_constraint"
+      : undefined;
+    console.error("Unable to save author submission.", {
+      code: error?.code ?? "not_found",
+      ...(constraint ? { constraint } : {})
+    });
+    return submissionResult(error?.code === "23505" ? "slug-taken" : "save-failed", previousState, formData);
   }
 
   revalidateAuthorContent(data.slug);
@@ -161,7 +199,7 @@ export async function saveSubmission(formData: FormData) {
         : "submitted-email-failed";
     redirect(`/author?status=${statusMessage}#submissions`);
   }
-  redirect("/author?status=draft-saved#submissions");
+  redirect(`/author?status=draft-saved&edit=${encodeURIComponent(data.id)}#submissions`);
 }
 
 export async function deleteSubmission(formData: FormData) {
